@@ -57,6 +57,7 @@ pub mod user_agent;
 mod user_notification;
 pub mod util;
 pub mod omnara_client;
+pub mod git_diff_tracker;
 pub use apply_patch::CODEX_APPLY_PATCH_ARG1;
 pub use safety::get_platform_sandbox;
 // Re-export the protocol types from the standalone `codex-protocol` crate so existing

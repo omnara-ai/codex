@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
+use crate::git_diff_tracker::GitDiffTracker;
 
 /// Omnara API client with minimal surface for Codex integration.
 ///
@@ -23,6 +24,7 @@ pub struct OmnaraClient {
     last_agent_message_id: Arc<Mutex<Option<String>>>,
     poller: Arc<Mutex<PollerState>>, // single active poller
     wrapper_log: PathBuf,
+    git: Option<Arc<Mutex<GitDiffTracker>>>,
 }
 
 #[derive(Default)]
@@ -167,6 +169,7 @@ impl OmnaraClient {
             last_agent_message_id: Arc::new(Mutex::new(None)),
             poller: Arc::new(Mutex::new(PollerState::default())),
             wrapper_log,
+            git: Some(Arc::new(Mutex::new(GitDiffTracker::new(true, None)))),
         };
         this.append_log(&format!(
             "=== OMNARA CLIENT INITIALIZED ===\nTime: {}\nSession ID: {}\nAPI URL: {}\n\n",
@@ -205,12 +208,23 @@ impl OmnaraClient {
         requires_user_input: bool,
     ) -> crate::error::Result<String> {
         debug!(content_len = content.len(), requires_user_input, session_id = %self.session_id, "Omnara send_agent_message: begin");
+        // Compute git diff if changed; include when present.
+        let git_diff = if let Some(g) = &self.git {
+            if let Ok(mut guard) = g.lock() {
+                guard.get_diff_if_changed()
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let body = AgentMessageRequest {
             agent_instance_id: &self.session_id.to_string(),
             content,
             requires_user_input,
             agent_type: Some("codex"),
-            git_diff: None,
+            git_diff: git_diff.as_deref(),
             send_push: None,
             send_email: None,
             send_sms: None,
