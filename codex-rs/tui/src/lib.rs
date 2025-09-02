@@ -46,6 +46,7 @@ pub mod live_wrap;
 mod markdown;
 mod markdown_stream;
 pub mod onboarding;
+mod omnara_format;
 mod pager_overlay;
 mod render;
 mod session_log;

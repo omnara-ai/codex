@@ -83,6 +83,7 @@ use codex_core::protocol::SandboxPolicy;
 use codex_core::protocol_config_types::ReasoningEffort as ReasoningEffortConfig;
 use codex_file_search::FileMatch;
 use uuid::Uuid;
+// External approval handled by Omnara bridge via direct ops
 
 // Track information about an in-flight exec command.
 struct RunningCommand {
@@ -363,12 +364,21 @@ impl ChatWidget {
     }
 
     fn on_patch_apply_begin(&mut self, event: PatchApplyBeginEvent) {
+        // Prepare details for Omnara before moving changes into the history cell.
+        let changes_for_omnara = event.changes.clone();
+
         self.add_to_history(history_cell::new_patch_event(
             PatchEventType::ApplyBegin {
                 auto_approved: event.auto_approved,
             },
             event.changes,
         ));
+
+        // Mirror a patch summary to Omnara (non-approval note), using centralized formatting.
+        if let Some(omnara) = self.omnara.as_ref() {
+            let msg = crate::omnara_format::format_patch_note(&changes_for_omnara);
+            omnara.send_note(msg);
+        }
     }
 
     fn on_patch_apply_end(&mut self, event: codex_core::protocol::PatchApplyEndEvent) {
@@ -513,6 +523,10 @@ impl ChatWidget {
             let pending = std::mem::take(&mut self.pending_exec_completions);
             for (command, parsed, output) in pending {
                 let include_header = !self.last_history_was_exec;
+                if let Some(omnara) = self.omnara.as_ref() {
+                    let msg = crate::omnara_format::format_exec_note(&command, &output);
+                    omnara.send_note(msg);
+                }
                 let cell = history_cell::new_completed_exec_command(
                     command,
                     parsed,
@@ -540,12 +554,17 @@ impl ChatWidget {
     pub(crate) fn handle_exec_approval_now(&mut self, id: String, ev: ExecApprovalRequestEvent) {
         self.flush_answer_stream_with_separator();
 
+        // Always show local modal
         let request = ApprovalRequest::Exec {
-            id,
-            command: ev.command,
-            reason: ev.reason,
+            id: id.clone(),
+            command: ev.command.clone(),
+            reason: ev.reason.clone(),
         };
         self.bottom_pane.push_approval_request(request);
+        // Also send remote approval request if Omnara is configured.
+        if let Some(omnara) = self.omnara.as_mut() {
+            omnara.send_exec_approval_request(id, ev.command.clone(), ev.reason.clone());
+        }
         self.request_redraw();
     }
 
@@ -560,12 +579,27 @@ impl ChatWidget {
             ev.changes.clone(),
         ));
 
+        // Always show local modal
         let request = ApprovalRequest::ApplyPatch {
-            id,
-            reason: ev.reason,
-            grant_root: ev.grant_root,
+            id: id.clone(),
+            reason: ev.reason.clone(),
+            grant_root: ev.grant_root.clone(),
         };
         self.bottom_pane.push_approval_request(request);
+        // Also send to Omnara if configured
+        if let Some(omnara) = self.omnara.as_mut() {
+            let file_count = ev.changes.len();
+            let (details, added, removed) = crate::omnara_format::format_patch_details(&ev.changes);
+            omnara.send_patch_approval_request(
+                id,
+                file_count,
+                added,
+                removed,
+                ev.reason.clone(),
+                ev.grant_root.clone(),
+                if details.is_empty() { None } else { Some(details) },
+            );
+        }
         self.request_redraw();
     }
 
@@ -599,20 +633,28 @@ impl ChatWidget {
 
     pub(crate) fn handle_mcp_begin_now(&mut self, ev: McpToolCallBeginEvent) {
         self.flush_answer_stream_with_separator();
-        self.add_to_history(history_cell::new_active_mcp_tool_call(ev.invocation));
+        let cell = history_cell::new_active_mcp_tool_call(ev.invocation.clone());
+        if let Some(omnara) = self.omnara.as_ref() {
+            let msg = crate::omnara_format::format_mcp_begin_note(&ev.invocation);
+            omnara.send_note(msg);
+        }
+        self.add_to_history(cell);
     }
     pub(crate) fn handle_mcp_end_now(&mut self, ev: McpToolCallEndEvent) {
         self.flush_answer_stream_with_separator();
-        self.add_boxed_history(history_cell::new_completed_mcp_tool_call(
+        let ok = ev.is_success();
+        if let Some(omnara) = self.omnara.as_ref() {
+            let msg = crate::omnara_format::format_mcp_end_note(&ev.invocation, &ev.result, ev.duration);
+            omnara.send_note(msg);
+        }
+        let cell = history_cell::new_completed_mcp_tool_call(
             80,
             ev.invocation,
             ev.duration,
-            ev.result
-                .as_ref()
-                .map(|r| !r.is_error.unwrap_or(false))
-                .unwrap_or(false),
+            ok,
             ev.result,
-        ));
+        );
+        self.add_boxed_history(cell);
     }
 
     fn layout_areas(&self, area: Rect) -> [Rect; 2] {
@@ -1281,6 +1323,15 @@ impl ChatWidget {
     }
     /// Forward an `Op` directly to codex.
     pub(crate) fn submit_op(&self, op: Op) {
+        // Cancel Omnara polling when user resolves approvals locally to avoid double resolution.
+        match op {
+            Op::ExecApproval { .. } | Op::PatchApproval { .. } => {
+                if let Some(omnara) = self.omnara.as_ref() {
+                    omnara.cancel_polling();
+                }
+            }
+            _ => {}
+        }
         // Record outbound operation for session replay fidelity.
         crate::session_log::log_outbound_op(&op);
         if let Err(e) = self.codex_op_tx.send(op) {
@@ -1297,6 +1348,11 @@ impl ChatWidget {
         debug!("received {len} custom prompts");
         // Forward to bottom pane so the slash popup can show them now.
         self.bottom_pane.set_custom_prompts(ev.custom_prompts);
+    }
+
+    /// Apply external approval decision (e.g., from Omnara) to current modal.
+    pub(crate) fn apply_external_approval(&mut self, decision: codex_core::protocol::ReviewDecision) -> bool {
+        self.bottom_pane.apply_external_approval(decision)
     }
 
     /// Programmatically submit a user text message as if typed in the
@@ -1337,6 +1393,7 @@ impl ChatWidget {
         self.bottom_pane.cursor_pos(bottom_pane_area)
     }
 }
+
 
 impl WidgetRef for &ChatWidget {
     fn render_ref(&self, area: Rect, buf: &mut Buffer) {

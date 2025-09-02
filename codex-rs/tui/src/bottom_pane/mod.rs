@@ -343,6 +343,24 @@ impl BottomPane {
         self.request_redraw();
     }
 
+    /// Attempt to resolve the current approval modal externally.
+    pub(crate) fn apply_external_approval(
+        &mut self,
+        decision: codex_core::protocol::ReviewDecision,
+    ) -> bool {
+        let mut handled = false;
+        if let Some(mut view) = self.active_view.take() {
+            handled = view.try_external_approval(decision);
+            if !view.is_complete() {
+                self.active_view = Some(view);
+            }
+            self.request_redraw();
+        }
+        handled
+    }
+
+    
+
     pub(crate) fn composer_is_empty(&self) -> bool {
         self.composer.is_empty()
     }
