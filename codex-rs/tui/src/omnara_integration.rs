@@ -245,7 +245,10 @@ impl OmnaraBridge {
         let codex_op_tx = self.codex_op_tx.clone();
         let pending = self.pending.clone();
         tokio::spawn(async move {
-            if let Ok(id) = client.send_agent_message(&approval_msg, true).await {
+            if let Ok(id) = client
+                .send_agent_message(&approval_msg, true)
+                .await
+            {
                 client.set_last_read_message_id(id);
                 client.append_log(&format!(
                     "Sent exec approval request - Request ID: {}\n",
@@ -282,7 +285,10 @@ impl OmnaraBridge {
         let codex_op_tx = self.codex_op_tx.clone();
         let pending = self.pending.clone();
         tokio::spawn(async move {
-            if let Ok(id) = client.send_agent_message(&approval_msg, true).await {
+            if let Ok(id) = client
+                .send_agent_message(&approval_msg, true)
+                .await
+            {
                 client.set_last_read_message_id(id);
                 client.append_log(&format!(
                     "Sent patch approval request - Request ID: {}\n",
