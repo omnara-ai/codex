@@ -51,23 +51,17 @@ struct AgentMessageRequest<'a> {
 
 #[derive(Debug, Deserialize)]
 struct AgentMessageResponse {
-    success: bool,
-    agent_instance_id: String,
     message_id: String,
-    #[serde(default)]
-    queued_user_messages: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
 struct PendingMessagesResponse {
-    agent_instance_id: String,
     messages: Vec<PendingMessage>,
     status: String, // "ok" | "stale"
 }
 
 #[derive(Debug, Deserialize, Clone)]
 struct PendingMessage {
-    pub id: String,
     pub content: String,
     #[allow(dead_code)]
     pub sender_type: Option<String>,
@@ -363,7 +357,7 @@ impl OmnaraClient {
             let poll_interval_secs = 5u64;
             let timeout_secs = 24 * 60 * 60u64; // 24h
             let start = std::time::Instant::now();
-            let mut last_id = last_read;
+            let last_id = last_read;
 
             loop {
                 if cancel_child.is_cancelled() {
@@ -425,7 +419,6 @@ impl OmnaraClient {
                             info!(count = pending.messages.len(), "Omnara polling: messages received");
                             for m in pending.messages {
                                 on_message(m.content);
-                                last_id = Some(m.id);
                             }
                             info!("Omnara polling: delivered messages; exiting");
                             break;

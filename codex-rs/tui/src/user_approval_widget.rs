@@ -251,7 +251,7 @@ impl UserApprovalWidget {
         }
     }
 
-    fn send_decision(&mut self, decision: ReviewDecision) {
+    pub(crate) fn send_decision(&mut self, decision: ReviewDecision) {
         self.send_decision_with_feedback(decision, String::new())
     }
 

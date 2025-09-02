@@ -2,6 +2,8 @@ use codex_core::omnara_client::OmnaraClient;
 use codex_core::protocol::InputItem;
 use codex_core::protocol::Op;
 use tokio::task::JoinHandle;
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
 
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
@@ -16,6 +18,13 @@ pub(crate) struct OmnaraBridge {
     last_agent_send_handle: Option<JoinHandle<()>>,
     app_event_tx: AppEventSender,
     codex_op_tx: tokio::sync::mpsc::UnboundedSender<Op>,
+    pending: Arc<Mutex<VecDeque<(String, ApprovalKind)>>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ApprovalKind {
+    Exec,
+    Patch,
 }
 
 impl OmnaraBridge {
@@ -30,6 +39,7 @@ impl OmnaraBridge {
             last_agent_send_handle: None,
             app_event_tx,
             codex_op_tx,
+            pending: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 
@@ -54,6 +64,7 @@ impl OmnaraBridge {
         let client = self.client.clone();
         let app_event_tx = self.app_event_tx.clone();
         let codex_op_tx = self.codex_op_tx.clone();
+        let pending = self.pending.clone();
 
         let handle = tokio::spawn(async move {
             info!("OmnaraBridge: sending agent message");
@@ -64,7 +75,7 @@ impl OmnaraBridge {
                 info!("OmnaraBridge: requesting user input after agent message");
                 client.append_log("[Bridge] request_user_input_for_last_message\n");
                 let _ = client.request_user_input_for_last_message().await;
-                Self::start_polling_impl(client, app_event_tx, codex_op_tx);
+                Self::start_polling_impl(client, app_event_tx, codex_op_tx, pending);
             }
         });
 
@@ -80,33 +91,45 @@ impl OmnaraBridge {
             let client = self.client.clone();
             let app_event_tx = self.app_event_tx.clone();
             let codex_op_tx = self.codex_op_tx.clone();
+            let pending = self.pending.clone();
             tokio::spawn(async move {
                 let _ = handle.await;
                 info!("OmnaraBridge: last agent send completed; requesting user input");
                 client.append_log("[Bridge] awaiting last send complete\n");
                 let _ = client.request_user_input_for_last_message().await;
-                Self::start_polling_impl(client, app_event_tx, codex_op_tx);
+                Self::start_polling_impl(client, app_event_tx, codex_op_tx, pending);
             });
         } else {
             let client = self.client.clone();
             let app_event_tx = self.app_event_tx.clone();
             let codex_op_tx = self.codex_op_tx.clone();
+            let pending = self.pending.clone();
             tokio::spawn(async move {
                 info!("OmnaraBridge: no last send; requesting user input now");
                 client.append_log("[Bridge] no last send; request input\n");
                 let _ = client.request_user_input_for_last_message().await;
-                Self::start_polling_impl(client, app_event_tx, codex_op_tx);
+                Self::start_polling_impl(client, app_event_tx, codex_op_tx, pending);
             });
         }
     }
 
     /// Send the standard interrupt message (requires input) and start polling immediately.
+
+
+    /// Send a plain agent note to Omnara (no user input required).
+    pub fn send_note(&self, message: String) {
+        let client = self.client.clone();
+        tokio::spawn(async move {
+            let _ = client.send_agent_message(&message, false).await;
+        });
+    }
     pub fn on_user_interrupt(&mut self) {
         info!("OmnaraBridge.on_user_interrupt");
         self.client.append_log("[Bridge] on_user_interrupt\n");
         let client = self.client.clone();
         let app_event_tx = self.app_event_tx.clone();
         let codex_op_tx = self.codex_op_tx.clone();
+        let pending = self.pending.clone();
         tokio::spawn(async move {
             if let Ok(id) = client
                 .send_agent_message("Tell the model what to do differently", true)
@@ -117,7 +140,7 @@ impl OmnaraBridge {
             // No need to request input again; the send above already did requires_user_input.
             info!("OmnaraBridge: interrupt sent; starting polling");
             client.append_log("[Bridge] interrupt sent; start polling\n");
-            Self::start_polling_impl(client, app_event_tx, codex_op_tx);
+            Self::start_polling_impl(client, app_event_tx, codex_op_tx, pending);
         });
     }
 
@@ -142,9 +165,28 @@ impl OmnaraBridge {
         client: OmnaraClient,
         app_event_tx: AppEventSender,
         codex_op_tx: tokio::sync::mpsc::UnboundedSender<Op>,
+        pending: Arc<Mutex<VecDeque<(String, ApprovalKind)>>>,
     ) {
         info!("OmnaraBridge: starting polling loop");
         client.start_polling(move |text: String| {
+            if let Some(decision) = parse_approval_response(&text) {
+                if let Ok(mut q) = pending.lock() {
+                    if let Some((_id, _kind)) = q.pop_front() {
+                        // Resolve the modal in UI; this will also send the op.
+                        app_event_tx.send(AppEvent::ResolveApproval { decision });
+                        return;
+                    }
+                }
+            } else {
+                // Fallback: if an approval is pending but response text does not match
+                // a known option, treat it as a rejection (Abort).
+                if let Ok(mut q) = pending.lock() {
+                    if let Some((_id, _kind)) = q.pop_front() {
+                        app_event_tx.send(AppEvent::ResolveApproval { decision: codex_core::protocol::ReviewDecision::Abort });
+                        return;
+                    }
+                }
+            }
             // 1) Show in TUI history like a user-typed message.
             app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
                 history_cell::new_user_prompt(text.clone()),
@@ -165,6 +207,7 @@ impl OmnaraBridge {
         let client = self.client.clone();
         let app_event_tx = self.app_event_tx.clone();
         let codex_op_tx = self.codex_op_tx.clone();
+        let pending = self.pending.clone();
         tokio::spawn(async move {
             if let Ok(id) = client
                 .send_agent_message(
@@ -175,7 +218,7 @@ impl OmnaraBridge {
             {
                 client.set_last_read_message_id(id);
             }
-            Self::start_polling_impl(client, app_event_tx, codex_op_tx);
+            Self::start_polling_impl(client, app_event_tx, codex_op_tx, pending);
         });
     }
 
@@ -187,5 +230,80 @@ impl OmnaraBridge {
         tokio::spawn(async move {
             let _ = client.end_session().await;
         })
+    }
+
+    /// Send an approval request to Omnara (exec) and start polling.
+    pub fn send_exec_approval_request(
+        &mut self,
+        request_id: String,
+        command: Vec<String>,
+        reason: Option<String>,
+    ) {
+        let approval_msg = crate::omnara_format::format_exec_approval_request(&command, reason.as_deref());
+        let client = self.client.clone();
+        let app_event_tx = self.app_event_tx.clone();
+        let codex_op_tx = self.codex_op_tx.clone();
+        let pending = self.pending.clone();
+        tokio::spawn(async move {
+            if let Ok(id) = client.send_agent_message(&approval_msg, true).await {
+                client.set_last_read_message_id(id);
+                client.append_log(&format!(
+                    "Sent exec approval request - Request ID: {}\n",
+                    request_id
+                ));
+                if let Ok(mut q) = pending.lock() { q.push_back((request_id, ApprovalKind::Exec)); }
+                OmnaraBridge::start_polling_impl(client, app_event_tx, codex_op_tx, pending.clone());
+            }
+        });
+    }
+
+    /// Send an approval request to Omnara (patch) and start polling.
+    pub fn send_patch_approval_request(
+        &mut self,
+        request_id: String,
+        file_count: usize,
+        added_lines: usize,
+        removed_lines: usize,
+        reason: Option<String>,
+        grant_root: Option<std::path::PathBuf>,
+        patch_details: Option<String>,
+    ) {
+        let approval_msg = crate::omnara_format::format_patch_approval_request(
+            file_count,
+            added_lines,
+            removed_lines,
+            reason.as_deref(),
+            grant_root.as_deref(),
+            patch_details.as_deref(),
+        );
+
+        let client = self.client.clone();
+        let app_event_tx = self.app_event_tx.clone();
+        let codex_op_tx = self.codex_op_tx.clone();
+        let pending = self.pending.clone();
+        tokio::spawn(async move {
+            if let Ok(id) = client.send_agent_message(&approval_msg, true).await {
+                client.set_last_read_message_id(id);
+                client.append_log(&format!(
+                    "Sent patch approval request - Request ID: {}\n",
+                    request_id
+                ));
+                if let Ok(mut q) = pending.lock() { q.push_back((request_id, ApprovalKind::Patch)); }
+                OmnaraBridge::start_polling_impl(client, app_event_tx, codex_op_tx, pending.clone());
+            }
+        });
+    }
+}
+
+fn parse_approval_response(message: &str) -> Option<codex_core::protocol::ReviewDecision> {
+    let normalized = message.trim().to_lowercase();
+    if normalized == "yes" {
+        Some(codex_core::protocol::ReviewDecision::Approved)
+    } else if normalized == "always" {
+        Some(codex_core::protocol::ReviewDecision::ApprovedForSession)
+    } else if normalized == "no, provide feedback" || normalized == "no" {
+        Some(codex_core::protocol::ReviewDecision::Abort)
+    } else {
+        None
     }
 }
