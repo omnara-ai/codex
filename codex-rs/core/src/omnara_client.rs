@@ -184,6 +184,7 @@ impl OmnaraClient {
         self.session_id
     }
 
+    #[allow(clippy::expect_used)]
     fn url(&self, path: &str) -> reqwest::Url {
         let base = Url::parse(&self.base_url).expect("valid OMNARA_API_URL");
         base.join(path).expect("valid API path")
@@ -250,10 +251,7 @@ impl OmnaraClient {
         if !status.is_success() {
             let text = resp.text().await.unwrap_or_default();
             error!(status = %status, body = %text, "Omnara send_agent_message: error");
-            self.append_log(&format!(
-                "Response Status: {}\nBody: {}\n\n",
-                status, text
-            ));
+        self.append_log(&format!("Response Status: {status}\nBody: {text}\n\n"));
             return Err(crate::error::CodexErr::UnexpectedStatus(status, text));
         }
 
@@ -265,11 +263,11 @@ impl OmnaraClient {
         ));
         info!(message_id = %parsed.message_id, requires_user_input, "Omnara send_agent_message: success");
 
-        if !requires_user_input {
-            if let Ok(mut guard) = self.last_agent_message_id.lock() {
-                *guard = Some(parsed.message_id.clone());
-                debug!(last_agent_message_id = guard.as_deref().unwrap_or("<none>"), "Updated last_agent_message_id");
-            }
+        if !requires_user_input
+            && let Ok(mut guard) = self.last_agent_message_id.lock()
+        {
+            *guard = Some(parsed.message_id.clone());
+            debug!(last_agent_message_id = guard.as_deref().unwrap_or("<none>"), "Updated last_agent_message_id");
         }
 
         Ok(parsed.message_id)
@@ -277,13 +275,11 @@ impl OmnaraClient {
 
     /// Request user input for the last recorded agent message id.
     pub async fn request_user_input_for_last_message(&self) -> crate::error::Result<()> {
-        let last_id = {
-            let guard = self
-                .last_agent_message_id
-                .lock()
-                .expect("last_agent_message_id poisoned");
-            guard.clone()
-        };
+        let last_id = self
+            .last_agent_message_id
+            .lock()
+            .ok()
+            .and_then(|g| g.clone());
 
         let Some(message_id) = last_id else {
             // Nothing to request; silently ignore.
@@ -292,10 +288,7 @@ impl OmnaraClient {
         };
 
         info!(message_id = %message_id, "request_user_input: begin");
-        let url = self.url(&format!(
-            "/api/v1/messages/{}/request-input",
-            message_id
-        ));
+        let url = self.url(&format!("/api/v1/messages/{message_id}/request-input"));
         info!(url = %url, "request_user_input: PATCH");
         self.append_log(&format!(
             "--- REQUEST USER INPUT ---\nTime: {}\nURL: {}\nMessage: last_agent_message\n\n",
@@ -308,10 +301,7 @@ impl OmnaraClient {
         if !status.is_success() {
             let text = resp.text().await.unwrap_or_default();
             error!(status = %status, body = %text, "request_user_input: error");
-            self.append_log(&format!(
-                "Response Status: {}\nBody: {}\n\n",
-                status, text
-            ));
+            self.append_log(&format!("Response Status: {status}\nBody: {text}\n\n"));
             return Err(crate::error::CodexErr::UnexpectedStatus(status, text));
         }
         info!("request_user_input: success");
@@ -357,13 +347,11 @@ impl OmnaraClient {
         let wrapper_log_path = self.wrapper_log.clone();
 
         // Use the last known agent message id as last_read_message_id.
-        let last_read = {
-            let guard = self
-                .last_agent_message_id
-                .lock()
-                .expect("last_agent_message_id poisoned");
-            guard.clone()
-        };
+        let last_read = self
+            .last_agent_message_id
+            .lock()
+            .ok()
+            .and_then(|g| g.clone());
 
         let http = self.http.clone();
 
@@ -385,6 +373,7 @@ impl OmnaraClient {
                 }
 
                 // Build request
+                #[allow(clippy::expect_used)]
                 let url = Url::parse(&base_url)
                     .and_then(|u| u.join("/api/v1/messages/pending"))
                     .expect("valid pending URL");
@@ -469,7 +458,7 @@ impl OmnaraClient {
             }
             if let Some(handle) = state.handle.take() {
                 // Detach; task will observe cancellation token and exit.
-                let _ = handle;
+                std::mem::drop(handle);
             }
         }
     }
@@ -481,7 +470,7 @@ impl OmnaraClient {
         dir.push("codex_wrapper");
         let _ = std::fs::create_dir_all(&dir);
         let mut path = dir;
-        path.push(format!("{}.log", session_id));
+        path.push(format!("{session_id}.log"));
         path
     }
 

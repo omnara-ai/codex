@@ -545,11 +545,9 @@ impl ChatWidget {
             };
             cell.complete_call(&ev.call_id, output.clone(), ev.duration);
             // When the last running command finishes, mirror a concise note to Omnara.
-            if self.running_commands.is_empty() {
-                if let Some(omnara) = self.omnara.as_ref() {
-                    let msg = crate::omnara_format::format_exec_note(&cmd_for_note, &output);
-                    omnara.send_note(msg);
-                }
+            if self.running_commands.is_empty() && let Some(omnara) = self.omnara.as_ref() {
+                let msg = crate::omnara_format::format_exec_note(&cmd_for_note, &output);
+                omnara.send_note(msg);
             }
             if cell.should_flush() {
                 self.flush_active_exec_cell();
@@ -1084,12 +1082,10 @@ impl ChatWidget {
         }
 
         // Mirror local user text to Omnara UI.
-        if !text.is_empty() {
-            if let Some(omnara) = self.omnara.as_ref() {
-                // Cancel polling is handled at submission start; ensure mirroring too.
-                debug!("ChatWidget.submit_user_message: mirroring local user message to Omnara");
-                omnara.on_local_user_message(text);
-            }
+        if !text.is_empty() && let Some(omnara) = self.omnara.as_ref() {
+            // Cancel polling is handled at submission start; ensure mirroring too.
+            debug!("ChatWidget.submit_user_message: mirroring local user message to Omnara");
+            omnara.on_local_user_message(text);
         }
     }
 
