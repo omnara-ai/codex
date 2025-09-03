@@ -15,25 +15,26 @@ pub fn format_patch_details(changes: &HashMap<PathBuf, FileChange>) -> (String, 
         let path_str = path.display().to_string();
 
         if !patch_details.is_empty() {
-            patch_details.push_str("\n");
+            patch_details.push('\n');
         }
 
         match change {
             FileChange::Add { content } => {
                 added_lines += content.lines().count();
-                patch_details.push_str(&format!("**New file: {}**\n", path_str));
+                patch_details.push_str(&format!("**New file: {path_str}**\n"));
                 patch_details.push_str("```diff\n");
                 let total = content.lines().count();
                 for line in content.lines().take(MAX_DIFF_LINES) {
-                    patch_details.push_str(&format!("+{}\n", line));
+                    patch_details.push_str(&format!("+{line}\n"));
                 }
                 if total > MAX_DIFF_LINES {
-                    patch_details.push_str(&format!("... ({} more lines)\n", total - MAX_DIFF_LINES));
+                    let more = total - MAX_DIFF_LINES;
+                    patch_details.push_str(&format!("... ({more} more lines)\n"));
                 }
                 patch_details.push_str("```\n");
             }
             FileChange::Update { unified_diff, .. } => {
-                patch_details.push_str(&format!("**{}**\n", path_str));
+                patch_details.push_str(&format!("**{path_str}**\n"));
                 patch_details.push_str("```diff\n");
                 let total = unified_diff.lines().count();
                 for line in unified_diff.lines().take(MAX_DIFF_LINES) {
@@ -41,7 +42,8 @@ pub fn format_patch_details(changes: &HashMap<PathBuf, FileChange>) -> (String, 
                     patch_details.push('\n');
                 }
                 if total > MAX_DIFF_LINES {
-                    patch_details.push_str(&format!("... ({} more lines)\n", total - MAX_DIFF_LINES));
+                    let more = total - MAX_DIFF_LINES;
+                    patch_details.push_str(&format!("... ({more} more lines)\n"));
                 }
                 patch_details.push_str("```\n");
 
@@ -53,9 +55,9 @@ pub fn format_patch_details(changes: &HashMap<PathBuf, FileChange>) -> (String, 
                     }
                 }
             }
-            FileChange::Delete => {
-                removed_lines += 1; // heuristic placeholder
-                patch_details.push_str(&format!("**Delete file: {}**\n", path_str));
+            FileChange::Delete { content } => {
+                removed_lines += content.lines().count();
+                patch_details.push_str(&format!("**Delete file: {path_str}**\n"));
             }
         }
     }
@@ -71,19 +73,19 @@ pub fn format_patch_note(changes: &HashMap<PathBuf, FileChange>) -> String {
 
     let mut msg = String::new();
     use std::fmt::Write as _;
-    let _ = write!(
+    let _ = writeln!(
         &mut msg,
-        "✏️ Applying patch to {} file{} (+{} -{})\n",
+        "✏️ Applying patch to {} file{} (+{} -{})",
         file_count,
         if file_count == 1 { "" } else { "s" },
         added,
         removed
     );
     for path in changes.keys() {
-        let _ = write!(&mut msg, "  └ {}\n", path.display());
+        let _ = writeln!(&mut msg, "  └ {}", path.display());
     }
     if !details.is_empty() {
-        msg.push_str("\n");
+        msg.push('\n');
         msg.push_str(&details);
     }
     msg
@@ -99,7 +101,7 @@ pub fn format_exec_note(command: &[String], output: &crate::history_cell::Comman
         format!("Failed (exit {})", output.exit_code)
     };
 
-    let mut msg = format!("**Exec:** `{}`\n**Status:** {}", cmd_str, status);
+    let mut msg = format!("**Exec:** `{cmd_str}`\n**Status:** {status}");
 
     // Build a trimmed preview: up to N lines, M chars per line, and K total chars.
     const MAX_LINES: usize = 20;
@@ -142,7 +144,7 @@ pub fn format_exec_note(command: &[String], output: &crate::history_cell::Comman
 /// Format an MCP tool call begin note.
 pub fn format_mcp_begin_note(invocation: &McpInvocation) -> String {
     let inv = format_mcp_invocation(invocation);
-    format!("**Tool:** {}\n**Status:** Running", inv)
+    format!("**Tool:** {inv}\n**Status:** Running")
 }
 
 /// Format an MCP tool call end note.
@@ -157,7 +159,7 @@ pub fn format_mcp_end_note(
         Err(_) => false,
     };
     let status = if ok { "Success" } else { "Failed" };
-    format!("**Tool:** {}\n**Status:** {}", inv, status)
+    format!("**Tool:** {inv}\n**Status:** {status}")
 }
 
 fn format_mcp_invocation(invocation: &McpInvocation) -> String {
@@ -178,8 +180,7 @@ pub fn format_exec_approval_request(command: &[String], reason: Option<&str>) ->
     let command_str = command.join(" ");
     let reason_str = reason.unwrap_or("Agent wants to execute a command");
     format!(
-        "**Execute command?**\n\n{}\n\n```bash\n{}\n```\n\n[OPTIONS]\n1. Yes\n2. Always\n3. No, provide feedback\n[/OPTIONS]",
-        reason_str, command_str
+        "**Execute command?**\n\n{reason_str}\n\n```bash\n{command_str}\n```\n\n[OPTIONS]\n1. Yes\n2. Always\n3. No, provide feedback\n[/OPTIONS]"
     )
 }
 
@@ -206,13 +207,11 @@ pub fn format_patch_approval_request(
         ));
     }
     if let Some(r) = reason {
-        approval_msg.push_str(&format!("\n\n{}", r));
+        approval_msg.push_str(&format!("\n\n{r}"));
     }
-    if let Some(details) = patch_details {
-        if !details.is_empty() {
-            approval_msg.push_str("\n\n");
-            approval_msg.push_str(details);
-        }
+    if let Some(details) = patch_details && !details.is_empty() {
+        approval_msg.push_str("\n\n");
+        approval_msg.push_str(details);
     }
     approval_msg.push_str(
         "\n\n**Apply changes?**\n\n[OPTIONS]\n1. Yes\n2. No, provide feedback\n[/OPTIONS]",
