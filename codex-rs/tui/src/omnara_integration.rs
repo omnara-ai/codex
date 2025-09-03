@@ -57,10 +57,8 @@ impl OmnaraBridge {
     /// will request user input and start polling after the send completes.
     pub fn on_agent_message(&mut self, message: String, request_after: bool) {
         debug!(request_after, "OmnaraBridge.on_agent_message");
-        self.client.append_log(&format!(
-            "[Bridge] on_agent_message(request_after={})\n",
-            request_after
-        ));
+        self.client
+            .append_log(&format!("[Bridge] on_agent_message(request_after={request_after})\n"));
         let client = self.client.clone();
         let app_event_tx = self.app_event_tx.clone();
         let codex_op_tx = self.codex_op_tx.clone();
@@ -114,8 +112,6 @@ impl OmnaraBridge {
     }
 
     /// Send the standard interrupt message (requires input) and start polling immediately.
-
-
     /// Send a plain agent note to Omnara (no user input required).
     pub fn send_note(&self, message: String) {
         let client = self.client.clone();
@@ -169,22 +165,21 @@ impl OmnaraBridge {
     ) {
         info!("OmnaraBridge: starting polling loop");
         client.start_polling(move |text: String| {
-            if let Some(decision) = parse_approval_response(&text) {
-                if let Ok(mut q) = pending.lock() {
-                    if let Some((_id, _kind)) = q.pop_front() {
-                        // Resolve the modal in UI; this will also send the op.
-                        app_event_tx.send(AppEvent::ResolveApproval { decision });
-                        return;
-                    }
-                }
+            if let Some(decision) = parse_approval_response(&text)
+                && let Ok(mut q) = pending.lock()
+                && let Some((_id, _kind)) = q.pop_front()
+            {
+                // Resolve the modal in UI; this will also send the op.
+                app_event_tx.send(AppEvent::ResolveApproval { decision });
+                return;
             } else {
                 // Fallback: if an approval is pending but response text does not match
                 // a known option, treat it as a rejection (Abort).
-                if let Ok(mut q) = pending.lock() {
-                    if let Some((_id, _kind)) = q.pop_front() {
-                        app_event_tx.send(AppEvent::ResolveApproval { decision: codex_core::protocol::ReviewDecision::Abort });
-                        return;
-                    }
+                if let Ok(mut q) = pending.lock()
+                    && let Some((_id, _kind)) = q.pop_front()
+                {
+                    app_event_tx.send(AppEvent::ResolveApproval { decision: codex_core::protocol::ReviewDecision::Abort });
+                    return;
                 }
             }
             // 1) Show in TUI history like a user-typed message.
@@ -251,8 +246,7 @@ impl OmnaraBridge {
             {
                 client.set_last_read_message_id(id);
                 client.append_log(&format!(
-                    "Sent exec approval request - Request ID: {}\n",
-                    request_id
+                    "Sent exec approval request - Request ID: {request_id}\n"
                 ));
                 if let Ok(mut q) = pending.lock() { q.push_back((request_id, ApprovalKind::Exec)); }
                 OmnaraBridge::start_polling_impl(client, app_event_tx, codex_op_tx, pending.clone());
@@ -261,6 +255,7 @@ impl OmnaraBridge {
     }
 
     /// Send an approval request to Omnara (patch) and start polling.
+    #[allow(clippy::too_many_arguments)]
     pub fn send_patch_approval_request(
         &mut self,
         request_id: String,
@@ -291,8 +286,7 @@ impl OmnaraBridge {
             {
                 client.set_last_read_message_id(id);
                 client.append_log(&format!(
-                    "Sent patch approval request - Request ID: {}\n",
-                    request_id
+                    "Sent patch approval request - Request ID: {request_id}\n"
                 ));
                 if let Ok(mut q) = pending.lock() { q.push_back((request_id, ApprovalKind::Patch)); }
                 OmnaraBridge::start_polling_impl(client, app_event_tx, codex_op_tx, pending.clone());

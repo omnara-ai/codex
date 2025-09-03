@@ -184,6 +184,7 @@ fn make_chatwidget_manual() -> (
         frame_requester: crate::tui::FrameRequester::test_dummy(),
         show_welcome_banner: true,
         queued_user_messages: std::collections::VecDeque::new(),
+        omnara: None,
     };
     (widget, rx, op_rx)
 }

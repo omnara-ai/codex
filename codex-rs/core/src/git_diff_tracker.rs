@@ -91,7 +91,7 @@ impl GitDiffTracker {
     /// returned by this method during the session. Uses SHA-1 of the trimmed
     /// diff text to detect changes.
     pub fn get_diff_if_changed(&mut self) -> Option<String> {
-        let Some(diff) = self.get_diff() else { return None };
+        let diff = self.get_diff()?;
         let trimmed = diff.trim().to_string();
         let mut hasher = sha1::Sha1::new();
         hasher.update(trimmed.as_bytes());
@@ -116,12 +116,12 @@ impl GitDiffTracker {
                 if let Some(rest) = line.strip_prefix("worktree ") {
                     let worktree_path = rest.trim();
                     let worktree = PathBuf::from(worktree_path);
-                    if worktree != current_dir {
-                        if let Ok(rel) = worktree.strip_prefix(&current_dir) {
-                            let rels = rel.to_string_lossy().to_string();
-                            if !rels.is_empty() {
-                                out.push(format!(":(exclude){}", rels));
-                            }
+                    if worktree != current_dir
+						&& let Ok(rel) = worktree.strip_prefix(&current_dir)
+                    {
+                        let rels = rel.to_string_lossy().to_string();
+                        if !rels.is_empty() {
+                            out.push(format!(":(exclude){rels}"));
                         }
                     }
                 }
@@ -167,18 +167,19 @@ impl GitDiffTracker {
             }
 
             use std::fmt::Write as _;
-            let _ = writeln!(buf, "diff --git a/{0} b/{0}", rel);
+            let _ = writeln!(buf, "diff --git a/{rel} b/{rel}");
             buf.push_str("new file mode 100644\n");
             buf.push_str("index 0000000..0000000\n");
             buf.push_str("--- /dev/null\n");
-            let _ = writeln!(buf, "+++ b/{}", rel);
+            let _ = writeln!(buf, "+++ b/{rel}");
 
             match std::fs::read_to_string(&abs) {
                 Ok(contents) => {
                     let lines: Vec<&str> = contents.lines().collect();
-                    let _ = writeln!(buf, "@@ -0,0 +1,{} @@", lines.len());
+                    let count = lines.len();
+                    let _ = writeln!(buf, "@@ -0,0 +1,{count} @@");
                     for line in lines {
-                        let _ = writeln!(buf, "+{}", line);
+                        let _ = writeln!(buf, "+{line}");
                     }
                     if !contents.ends_with('\n') {
                         buf.push_str("\\ No newline at end of file\n");
