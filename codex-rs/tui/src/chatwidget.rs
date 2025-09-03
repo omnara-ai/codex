@@ -45,7 +45,6 @@ use ratatui::layout::Rect;
 use ratatui::widgets::Widget;
 use ratatui::widgets::WidgetRef;
 use tokio::sync::mpsc::UnboundedSender;
-use tracing::debug;
 
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
@@ -72,6 +71,8 @@ use self::agent::spawn_agent;
 use self::agent::spawn_agent_from_existing;
 use crate::streaming::controller::AppEventHistorySink;
 use crate::streaming::controller::StreamController;
+use crate::omnara_integration::OmnaraBridge;
+use tracing::{debug, info};
 use codex_common::approval_presets::ApprovalPreset;
 use codex_common::approval_presets::builtin_approval_presets;
 use codex_common::model_presets::ModelPreset;
@@ -82,6 +83,7 @@ use codex_core::protocol::SandboxPolicy;
 use codex_core::protocol_config_types::ReasoningEffort as ReasoningEffortConfig;
 use codex_file_search::FileMatch;
 use uuid::Uuid;
+// External approval handled by Omnara bridge via direct ops
 
 // Track information about an in-flight exec command.
 struct RunningCommand {
@@ -116,6 +118,8 @@ pub(crate) struct ChatWidget {
     last_history_was_exec: bool,
     // User messages queued while a turn is in progress
     queued_user_messages: VecDeque<UserMessage>,
+    // Optional Omnara bridge (enabled when OMNARA_* env vars are present)
+    omnara: Option<OmnaraBridge>,
 }
 
 struct UserMessage {
@@ -145,8 +149,18 @@ impl ChatWidget {
         let sink = AppEventHistorySink(self.app_event_tx.clone());
         let _ = self.stream.finalize(true, &sink);
     }
+
+    /// End Omnara session with a timeout; best-effort to wait up to `dur`.
+    pub(crate) async fn end_omnara_session_with_timeout(&self, dur: std::time::Duration) {
+        if let Some(omnara) = self.omnara.as_ref() {
+            tracing::info!("ChatWidget.end_omnara_session_with_timeout: ending Omnara session");
+            let handle = omnara.on_session_end();
+            let _ = tokio::time::timeout(dur, handle).await;
+        }
+    }
     // --- Small event handlers ---
     fn on_session_configured(&mut self, event: codex_core::protocol::SessionConfiguredEvent) {
+        tracing::info!("ChatWidget.on_session_configured: session ready; announcing to Omnara if enabled");
         self.bottom_pane
             .set_history_metadata(event.history_log_id, event.history_entry_count);
         self.session_id = Some(event.session_id);
@@ -157,6 +171,10 @@ impl ChatWidget {
         ));
         // Ask codex-core to enumerate custom prompts for this session.
         self.submit_op(Op::ListCustomPrompts);
+        // Announce session to Omnara and start polling immediately.
+        if let Some(omnara) = self.omnara.as_mut() {
+            omnara.on_session_start();
+        }
         if let Some(user_message) = self.initial_user_message.take() {
             self.submit_user_message(user_message);
         }
@@ -164,10 +182,17 @@ impl ChatWidget {
     }
 
     fn on_agent_message(&mut self, message: String) {
+        debug!("ChatWidget.on_agent_message: applying final answer and forwarding to Omnara (if enabled)");
         let sink = AppEventHistorySink(self.app_event_tx.clone());
         let finished = self.stream.apply_final_answer(&message, &sink);
         self.handle_if_stream_finished(finished);
         self.request_redraw();
+        // Forward final agent message to Omnara (no immediate request if a task is running).
+        if let Some(omnara) = self.omnara.as_mut() {
+            let request_after = !self.bottom_pane.is_task_running();
+            debug!(request_after, "ChatWidget.on_agent_message: calling Omnara.on_agent_message");
+            omnara.on_agent_message(message, request_after);
+        }
     }
 
     fn on_agent_message_delta(&mut self, delta: String) {
@@ -222,6 +247,7 @@ impl ChatWidget {
     }
 
     fn on_task_complete(&mut self) {
+        info!("ChatWidget.on_task_complete: finalizing stream and requesting Omnara input");
         // If a stream is currently active, finalize only that stream to flush any tail
         // without emitting stray headers for other streams.
         if self.stream.is_write_cycle_active() {
@@ -235,6 +261,11 @@ impl ChatWidget {
 
         // If there is a queued user message, send exactly one now to begin the next turn.
         self.maybe_send_next_queued_input();
+        // After task completes, request remote input on the last agent message and start polling.
+        if let Some(omnara) = self.omnara.as_mut() {
+            debug!("ChatWidget.on_task_complete: calling Omnara.on_task_complete");
+            omnara.on_task_complete();
+        }
     }
 
     fn on_token_count(&mut self, token_usage: TokenUsage) {
@@ -290,6 +321,11 @@ impl ChatWidget {
         }
 
         self.request_redraw();
+        // Send an interruption prompt to Omnara and begin polling immediately.
+        if let Some(omnara) = self.omnara.as_mut() {
+            info!("ChatWidget.on_interrupted_turn: calling Omnara.on_user_interrupt");
+            omnara.on_user_interrupt();
+        }
     }
 
     fn on_plan_update(&mut self, update: codex_core::plan_tool::UpdatePlanArgs) {
@@ -328,12 +364,21 @@ impl ChatWidget {
     }
 
     fn on_patch_apply_begin(&mut self, event: PatchApplyBeginEvent) {
+        // Prepare details for Omnara before moving changes into the history cell.
+        let changes_for_omnara = event.changes.clone();
+
         self.add_to_history(history_cell::new_patch_event(
             PatchEventType::ApplyBegin {
                 auto_approved: event.auto_approved,
             },
             event.changes,
         ));
+
+        // Mirror a patch summary to Omnara (non-approval note), using centralized formatting.
+        if let Some(omnara) = self.omnara.as_ref() {
+            let msg = crate::omnara_format::format_patch_note(&changes_for_omnara);
+            omnara.send_note(msg);
+        }
     }
 
     fn on_patch_apply_end(&mut self, event: codex_core::protocol::PatchApplyEndEvent) {
@@ -478,6 +523,10 @@ impl ChatWidget {
             let pending = std::mem::take(&mut self.pending_exec_completions);
             for (command, parsed, output) in pending {
                 let include_header = !self.last_history_was_exec;
+                if let Some(omnara) = self.omnara.as_ref() {
+                    let msg = crate::omnara_format::format_exec_note(&command, &output);
+                    omnara.send_note(msg);
+                }
                 let cell = history_cell::new_completed_exec_command(
                     command,
                     parsed,
@@ -505,12 +554,17 @@ impl ChatWidget {
     pub(crate) fn handle_exec_approval_now(&mut self, id: String, ev: ExecApprovalRequestEvent) {
         self.flush_answer_stream_with_separator();
 
+        // Always show local modal
         let request = ApprovalRequest::Exec {
-            id,
-            command: ev.command,
-            reason: ev.reason,
+            id: id.clone(),
+            command: ev.command.clone(),
+            reason: ev.reason.clone(),
         };
         self.bottom_pane.push_approval_request(request);
+        // Also send remote approval request if Omnara is configured.
+        if let Some(omnara) = self.omnara.as_mut() {
+            omnara.send_exec_approval_request(id, ev.command.clone(), ev.reason.clone());
+        }
         self.request_redraw();
     }
 
@@ -525,12 +579,27 @@ impl ChatWidget {
             ev.changes.clone(),
         ));
 
+        // Always show local modal
         let request = ApprovalRequest::ApplyPatch {
-            id,
-            reason: ev.reason,
-            grant_root: ev.grant_root,
+            id: id.clone(),
+            reason: ev.reason.clone(),
+            grant_root: ev.grant_root.clone(),
         };
         self.bottom_pane.push_approval_request(request);
+        // Also send to Omnara if configured
+        if let Some(omnara) = self.omnara.as_mut() {
+            let file_count = ev.changes.len();
+            let (details, added, removed) = crate::omnara_format::format_patch_details(&ev.changes);
+            omnara.send_patch_approval_request(
+                id,
+                file_count,
+                added,
+                removed,
+                ev.reason.clone(),
+                ev.grant_root.clone(),
+                if details.is_empty() { None } else { Some(details) },
+            );
+        }
         self.request_redraw();
     }
 
@@ -564,20 +633,28 @@ impl ChatWidget {
 
     pub(crate) fn handle_mcp_begin_now(&mut self, ev: McpToolCallBeginEvent) {
         self.flush_answer_stream_with_separator();
-        self.add_to_history(history_cell::new_active_mcp_tool_call(ev.invocation));
+        let cell = history_cell::new_active_mcp_tool_call(ev.invocation.clone());
+        if let Some(omnara) = self.omnara.as_ref() {
+            let msg = crate::omnara_format::format_mcp_begin_note(&ev.invocation);
+            omnara.send_note(msg);
+        }
+        self.add_to_history(cell);
     }
     pub(crate) fn handle_mcp_end_now(&mut self, ev: McpToolCallEndEvent) {
         self.flush_answer_stream_with_separator();
-        self.add_boxed_history(history_cell::new_completed_mcp_tool_call(
+        let ok = ev.is_success();
+        if let Some(omnara) = self.omnara.as_ref() {
+            let msg = crate::omnara_format::format_mcp_end_note(&ev.invocation, &ev.result, ev.duration);
+            omnara.send_note(msg);
+        }
+        let cell = history_cell::new_completed_mcp_tool_call(
             80,
             ev.invocation,
             ev.duration,
-            ev.result
-                .as_ref()
-                .map(|r| !r.is_error.unwrap_or(false))
-                .unwrap_or(false),
+            ok,
             ev.result,
-        ));
+        );
+        self.add_boxed_history(cell);
     }
 
     fn layout_areas(&self, area: Rect) -> [Rect; 2] {
@@ -604,6 +681,10 @@ impl ChatWidget {
         let mut rng = rand::rng();
         let placeholder = EXAMPLE_PROMPTS[rng.random_range(0..EXAMPLE_PROMPTS.len())].to_string();
         let codex_op_tx = spawn_agent(config.clone(), app_event_tx.clone(), conversation_manager);
+        let omnara = crate::omnara_integration::OmnaraBridge::from_env(
+            app_event_tx.clone(),
+            codex_op_tx.clone(),
+        );
 
         Self {
             app_event_tx: app_event_tx.clone(),
@@ -636,6 +717,7 @@ impl ChatWidget {
             last_history_was_exec: false,
             queued_user_messages: VecDeque::new(),
             show_welcome_banner: true,
+            omnara,
         }
     }
 
@@ -653,6 +735,10 @@ impl ChatWidget {
 
         let codex_op_tx =
             spawn_agent_from_existing(conversation, session_configured, app_event_tx.clone());
+        let omnara = crate::omnara_integration::OmnaraBridge::from_env(
+            app_event_tx.clone(),
+            codex_op_tx.clone(),
+        );
 
         Self {
             app_event_tx: app_event_tx.clone(),
@@ -682,6 +768,7 @@ impl ChatWidget {
             last_history_was_exec: false,
             queued_user_messages: VecDeque::new(),
             show_welcome_banner: false,
+            omnara,
         }
     }
 
@@ -914,6 +1001,11 @@ impl ChatWidget {
     }
 
     fn submit_user_message(&mut self, user_message: UserMessage) {
+        // Cancel any active Omnara polling since a local input is being submitted.
+        debug!("ChatWidget.submit_user_message: cancel Omnara polling (if active)");
+        if let Some(omnara) = self.omnara.as_ref() {
+            omnara.cancel_polling();
+        }
         let UserMessage { text, image_paths } = user_message;
         let mut items: Vec<InputItem> = Vec::new();
 
@@ -947,6 +1039,15 @@ impl ChatWidget {
         // Only show the text portion in conversation history.
         if !text.is_empty() {
             self.add_to_history(history_cell::new_user_prompt(text.clone()));
+        }
+
+        // Mirror local user text to Omnara UI.
+        if !text.is_empty() {
+            if let Some(omnara) = self.omnara.as_ref() {
+                // Cancel polling is handled at submission start; ensure mirroring too.
+                debug!("ChatWidget.submit_user_message: mirroring local user message to Omnara");
+                omnara.on_local_user_message(text);
+            }
         }
     }
 
@@ -1222,6 +1323,15 @@ impl ChatWidget {
     }
     /// Forward an `Op` directly to codex.
     pub(crate) fn submit_op(&self, op: Op) {
+        // Cancel Omnara polling when user resolves approvals locally to avoid double resolution.
+        match op {
+            Op::ExecApproval { .. } | Op::PatchApproval { .. } => {
+                if let Some(omnara) = self.omnara.as_ref() {
+                    omnara.cancel_polling();
+                }
+            }
+            _ => {}
+        }
         // Record outbound operation for session replay fidelity.
         crate::session_log::log_outbound_op(&op);
         if let Err(e) = self.codex_op_tx.send(op) {
@@ -1238,6 +1348,11 @@ impl ChatWidget {
         debug!("received {len} custom prompts");
         // Forward to bottom pane so the slash popup can show them now.
         self.bottom_pane.set_custom_prompts(ev.custom_prompts);
+    }
+
+    /// Apply external approval decision (e.g., from Omnara) to current modal.
+    pub(crate) fn apply_external_approval(&mut self, decision: codex_core::protocol::ReviewDecision) -> bool {
+        self.bottom_pane.apply_external_approval(decision)
     }
 
     /// Programmatically submit a user text message as if typed in the
@@ -1278,6 +1393,7 @@ impl ChatWidget {
         self.bottom_pane.cursor_pos(bottom_pane_area)
     }
 }
+
 
 impl WidgetRef for &ChatWidget {
     fn render_ref(&self, area: Rect, buf: &mut Buffer) {
