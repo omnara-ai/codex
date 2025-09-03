@@ -59,4 +59,9 @@ pub(crate) enum AppEvent {
 
     /// Forwarded conversation history snapshot from the current conversation.
     ConversationHistory(ConversationHistoryResponseEvent),
+
+    ResolveApproval {
+        decision: codex_core::protocol::ReviewDecision,
+    },
 }
+

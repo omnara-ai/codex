@@ -45,6 +45,7 @@ pub mod live_wrap;
 mod markdown;
 mod markdown_stream;
 pub mod onboarding;
+mod omnara_format;
 mod pager_overlay;
 mod render;
 mod session_log;
@@ -55,6 +56,7 @@ mod streaming;
 mod text_formatting;
 mod tui;
 mod user_approval_widget;
+mod omnara_integration;
 
 // Internal vt100-based replay tests live as a separate source file to keep them
 // close to the widget code. Include them in unit tests.
@@ -77,6 +79,16 @@ pub async fn run_main(
     cli: Cli,
     codex_linux_sandbox_exe: Option<PathBuf>,
 ) -> std::io::Result<codex_core::protocol::TokenUsage> {
+    // Wire Omnara CLI flags into environment variables expected by the TUI bridge.
+    if let Some(api_key) = &cli.omnara_api_key {
+        unsafe { std::env::set_var("OMNARA_API_KEY", api_key) };
+    }
+    if let Some(api_url) = &cli.omnara_api_url {
+        unsafe { std::env::set_var("OMNARA_API_URL", api_url) };
+    }
+    if let Some(session_id) = &cli.omnara_session_id {
+        unsafe { std::env::set_var("OMNARA_SESSION_ID", session_id) };
+    }
     let (sandbox_mode, approval_policy) = if cli.full_auto {
         (
             Some(SandboxMode::WorkspaceWrite),
