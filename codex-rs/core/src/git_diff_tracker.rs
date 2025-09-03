@@ -93,9 +93,6 @@ impl GitDiffTracker {
     pub fn get_diff_if_changed(&mut self) -> Option<String> {
         let Some(diff) = self.get_diff() else { return None };
         let trimmed = diff.trim().to_string();
-        if trimmed.is_empty() {
-            return None;
-        }
         let mut hasher = sha1::Sha1::new();
         hasher.update(trimmed.as_bytes());
         let hash = format!("{:x}", hasher.finalize());
@@ -214,4 +211,3 @@ impl GitDiffTracker {
         }
     }
 }
-
