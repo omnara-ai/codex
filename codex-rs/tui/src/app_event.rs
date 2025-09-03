@@ -76,4 +76,7 @@ pub(crate) enum AppEvent {
 
     /// Open the custom prompt option from the review popup.
     OpenReviewCustomPrompt,
+    ResolveApproval {
+        decision: codex_core::protocol::ReviewDecision,
+    },
 }

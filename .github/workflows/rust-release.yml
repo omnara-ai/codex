@@ -10,6 +10,7 @@ on:
   push:
     tags:
       - "rust-v*.*.*"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}
@@ -163,6 +164,8 @@ jobs:
           path: |
             codex-rs/dist/${{ matrix.target }}/*
 
+  # Note: The previous job that created a GitHub Release and staged an npm
+  # package has been removed. Create releases and tags manually via the UI.
   release:
     needs: build
     name: release

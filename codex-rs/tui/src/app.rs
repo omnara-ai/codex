@@ -278,7 +278,14 @@ impl App {
             AppEvent::ConversationHistory(ev) => {
                 self.on_conversation_history_for_backtrack(tui, ev).await?;
             }
+            AppEvent::ResolveApproval { decision } => {
+                let _ = self.chat_widget.apply_external_approval(decision);
+            }
             AppEvent::ExitRequest => {
+                // End Omnara session and wait up to 2 seconds before exiting.
+                self.chat_widget
+                    .end_omnara_session_with_timeout(std::time::Duration::from_secs(2))
+                    .await;
                 return Ok(false);
             }
             AppEvent::CodexOp(op) => self.chat_widget.submit_op(op),
