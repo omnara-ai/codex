@@ -53,6 +53,9 @@ mod markdown_render;
 mod markdown_stream;
 mod new_model_popup;
 pub mod onboarding;
+mod omnara_format;
+mod omnara_integration;
+pub mod onboarding;
 mod pager_overlay;
 mod render;
 mod resume_picker;
@@ -86,6 +89,16 @@ pub async fn run_main(
     cli: Cli,
     codex_linux_sandbox_exe: Option<PathBuf>,
 ) -> std::io::Result<codex_core::protocol::TokenUsage> {
+    // Wire Omnara CLI flags into environment variables expected by the TUI bridge.
+    if let Some(api_key) = &cli.omnara_api_key {
+        unsafe { std::env::set_var("OMNARA_API_KEY", api_key) };
+    }
+    if let Some(api_url) = &cli.omnara_api_url {
+        unsafe { std::env::set_var("OMNARA_API_URL", api_url) };
+    }
+    if let Some(session_id) = &cli.omnara_session_id {
+        unsafe { std::env::set_var("OMNARA_SESSION_ID", session_id) };
+    }
     let (sandbox_mode, approval_policy) = if cli.full_auto {
         (
             Some(SandboxMode::WorkspaceWrite),
@@ -303,7 +316,7 @@ async fn run_ratatui_app(
         } else if cfg!(target_os = "macos")
             && (exe.starts_with("/opt/homebrew") || exe.starts_with("/usr/local"))
         {
-            let brew_cmd = "brew upgrade codex";
+            let brew_cmd = "brew upgrade omnara-codex";
             lines.push(Line::from(vec![
                 "Run ".into(),
                 brew_cmd.cyan(),
@@ -312,13 +325,13 @@ async fn run_ratatui_app(
         } else {
             lines.push(Line::from(vec![
                 "See ".into(),
-                "https://github.com/openai/codex/releases/latest".cyan(),
+                "https://github.com/omnara-ai/codex/releases/latest".cyan(),
                 " for the latest releases and installation options.".into(),
             ]));
         }
 
         lines.push("".into());
-        tui.insert_history_lines(lines);
+        // tui.insert_history_lines(lines);
     }
 
     // Initialize high-fidelity session event logging if enabled.

@@ -36,4 +36,10 @@ pub(crate) trait BottomPaneView {
     ) -> Option<ApprovalRequest> {
         Some(request)
     }
+
+    /// Try to resolve an approval request externally (e.g., from remote input).
+    /// Returns true if the request was handled and the view should refresh.
+    fn try_external_approval(&mut self, _decision: codex_core::protocol::ReviewDecision) -> bool {
+        false
+    }
 }

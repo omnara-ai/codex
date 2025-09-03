@@ -252,6 +252,7 @@ fn make_chatwidget_manual() -> (
         queued_user_messages: VecDeque::new(),
         suppress_session_configured_redraw: false,
         pending_notification: None,
+        omnara: None,
     };
     (widget, rx, op_rx)
 }
