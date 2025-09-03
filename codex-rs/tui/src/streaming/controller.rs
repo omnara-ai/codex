@@ -1,5 +1,3 @@
-use crate::history_cell;
-use crate::history_cell::HistoryCell;
 use codex_core::config::Config;
 use ratatui::text::Line;
 
@@ -8,7 +6,7 @@ use super::StreamState;
 
 /// Sink for history insertions and animation control.
 pub(crate) trait HistorySink {
-    fn insert_history_cell(&self, cell: Box<dyn HistoryCell>);
+    fn insert_history(&self, lines: Vec<Line<'static>>);
     fn start_commit_animation(&self);
     fn stop_commit_animation(&self);
 }
@@ -17,9 +15,9 @@ pub(crate) trait HistorySink {
 pub(crate) struct AppEventHistorySink(pub(crate) crate::app_event_sender::AppEventSender);
 
 impl HistorySink for AppEventHistorySink {
-    fn insert_history_cell(&self, cell: Box<dyn crate::history_cell::HistoryCell>) {
+    fn insert_history(&self, lines: Vec<Line<'static>>) {
         self.0
-            .send(crate::app_event::AppEvent::InsertHistoryCell(cell))
+            .send(crate::app_event::AppEvent::InsertHistoryLines(lines))
     }
     fn start_commit_animation(&self) {
         self.0
@@ -66,6 +64,10 @@ impl StreamController {
         self.active = false;
         self.finishing_after_drain = false;
         // leave header state unchanged; caller decides when to reset
+    }
+
+    fn emit_header_if_needed(&mut self, out_lines: &mut Lines) -> bool {
+        self.header.maybe_emit(out_lines)
     }
 
     /// Begin an answer stream. Does not emit header yet; it is emitted on first commit.
@@ -122,11 +124,10 @@ impl StreamController {
                 out_lines.extend(step.history);
             }
             if !out_lines.is_empty() {
-                // Insert as a HistoryCell so display drops the header while transcript keeps it.
-                sink.insert_history_cell(Box::new(history_cell::AgentMessageCell::new(
-                    out_lines,
-                    self.header.maybe_emit_header(),
-                )));
+                let mut lines_with_header: Lines = Vec::new();
+                self.emit_header_if_needed(&mut lines_with_header);
+                lines_with_header.extend(out_lines);
+                sink.insert_history(lines_with_header);
             }
 
             // Cleanup
@@ -158,10 +159,11 @@ impl StreamController {
         }
         let step = { self.state.step() };
         if !step.history.is_empty() {
-            sink.insert_history_cell(Box::new(history_cell::AgentMessageCell::new(
-                step.history,
-                self.header.maybe_emit_header(),
-            )));
+            let mut lines: Lines = Vec::new();
+            self.emit_header_if_needed(&mut lines);
+            let mut out = lines;
+            out.extend(step.history);
+            sink.insert_history(out);
         }
 
         let is_idle = self.state.is_idle();
@@ -242,9 +244,8 @@ mod tests {
         }
     }
     impl HistorySink for TestSink {
-        fn insert_history_cell(&self, cell: Box<dyn crate::history_cell::HistoryCell>) {
-            // For tests, store the transcript representation of the cell.
-            self.lines.borrow_mut().push(cell.transcript_lines());
+        fn insert_history(&self, lines: Vec<Line<'static>>) {
+            self.lines.borrow_mut().push(lines);
         }
         fn start_commit_animation(&self) {}
         fn stop_commit_animation(&self) {}

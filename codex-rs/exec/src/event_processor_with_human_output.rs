@@ -404,16 +404,13 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                                 println!("{}", line.style(self.green));
                             }
                         }
-                        FileChange::Delete { content } => {
+                        FileChange::Delete => {
                             let header = format!(
                                 "{} {}",
                                 format_file_change(change),
                                 path.to_string_lossy()
                             );
                             println!("{}", header.style(self.magenta));
-                            for line in content.lines() {
-                                println!("{}", line.style(self.red));
-                            }
                         }
                         FileChange::Update {
                             unified_diff,
@@ -563,7 +560,7 @@ fn escape_command(command: &[String]) -> String {
 fn format_file_change(change: &FileChange) -> &'static str {
     match change {
         FileChange::Add { .. } => "A",
-        FileChange::Delete { .. } => "D",
+        FileChange::Delete => "D",
         FileChange::Update {
             move_path: Some(_), ..
         } => "R",

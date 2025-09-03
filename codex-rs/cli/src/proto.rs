@@ -2,7 +2,6 @@ use std::io::IsTerminal;
 
 use clap::Parser;
 use codex_common::CliConfigOverrides;
-use codex_core::AuthManager;
 use codex_core::ConversationManager;
 use codex_core::NewConversation;
 use codex_core::config::Config;
@@ -10,6 +9,7 @@ use codex_core::config::ConfigOverrides;
 use codex_core::protocol::Event;
 use codex_core::protocol::EventMsg;
 use codex_core::protocol::Submission;
+use codex_login::AuthManager;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
 use tracing::error;

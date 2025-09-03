@@ -9,7 +9,7 @@ use ratatui::text::Text;
 pub fn ansi_escape_line(s: &str) -> Line<'static> {
     let text = ansi_escape(s);
     match text.lines.as_slice() {
-        [] => "".into(),
+        [] => Line::from(""),
         [only] => only.clone(),
         [first, rest @ ..] => {
             tracing::warn!("ansi_escape_line: expected a single line, got {first:?} and {rest:?}");

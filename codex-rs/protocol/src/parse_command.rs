@@ -17,6 +17,22 @@ pub enum ParsedCommand {
         query: Option<String>,
         path: Option<String>,
     },
+    Format {
+        cmd: String,
+        tool: Option<String>,
+        targets: Option<Vec<String>>,
+    },
+    Test {
+        cmd: String,
+    },
+    Lint {
+        cmd: String,
+        tool: Option<String>,
+        targets: Option<Vec<String>>,
+    },
+    Noop {
+        cmd: String,
+    },
     Unknown {
         cmd: String,
     },

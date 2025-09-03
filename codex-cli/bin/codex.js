@@ -43,8 +43,7 @@ switch (platform) {
         targetTriple = "x86_64-pc-windows-msvc.exe";
         break;
       case "arm64":
-        targetTriple = "aarch64-pc-windows-msvc.exe";
-        break;
+      // We do not build this today, fall through...
       default:
         break;
     }

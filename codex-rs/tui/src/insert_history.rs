@@ -21,8 +21,7 @@ use ratatui::text::Span;
 use textwrap::Options as TwOptions;
 use textwrap::WordSplitter;
 
-/// Insert `lines` above the viewport using the terminal's backend writer
-/// (avoids direct stdout references).
+/// Insert `lines` above the viewport.
 pub(crate) fn insert_history_lines(terminal: &mut tui::Terminal, lines: Vec<Line>) {
     let mut out = std::io::stdout();
     insert_history_lines_to_writer(terminal, &mut out, lines);
@@ -263,10 +262,7 @@ where
 }
 
 /// Word-aware wrapping for a list of `Line`s preserving styles.
-pub(crate) fn word_wrap_lines<'a, I>(lines: I, width: u16) -> Vec<Line<'static>>
-where
-    I: IntoIterator<Item = &'a Line<'a>>,
-{
+pub(crate) fn word_wrap_lines(lines: &[Line], width: u16) -> Vec<Line<'static>> {
     let mut out = Vec::new();
     let w = width.max(1) as usize;
     for line in lines {
@@ -419,7 +415,7 @@ mod tests {
 
     #[test]
     fn line_height_counts_double_width_emoji() {
-        let line = "😀😀😀".into(); // each emoji ~ width 2
+        let line = Line::from("😀😀😀"); // each emoji ~ width 2
         assert_eq!(word_wrap_line(&line, 4).len(), 2);
         assert_eq!(word_wrap_line(&line, 2).len(), 3);
         assert_eq!(word_wrap_line(&line, 6).len(), 1);
@@ -428,7 +424,7 @@ mod tests {
     #[test]
     fn word_wrap_does_not_split_words_simple_english() {
         let sample = "Years passed, and Willowmere thrived in peace and friendship. Mira’s herb garden flourished with both ordinary and enchanted plants, and travelers spoke of the kindness of the woman who tended them.";
-        let line = sample.into();
+        let line = Line::from(sample);
         // Force small width to exercise wrapping at spaces.
         let wrapped = word_wrap_lines(&[line], 40);
         let joined: String = wrapped

@@ -2,6 +2,7 @@
 
 use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;
+use ratatui::text::Line;
 
 fn term(viewport: Rect) -> codex_tui::custom_terminal::Terminal<TestBackend> {
     let backend = TestBackend::new(20, 6);
@@ -22,7 +23,7 @@ fn stream_commit_trickle_no_duplication() {
     codex_tui::insert_history::insert_history_lines_to_writer(
         &mut t,
         &mut out1,
-        vec!["one".into()],
+        vec![Line::from("one")],
     );
 
     // Step 2: later commit next row
@@ -30,7 +31,7 @@ fn stream_commit_trickle_no_duplication() {
     codex_tui::insert_history::insert_history_lines_to_writer(
         &mut t,
         &mut out2,
-        vec!["two".into()],
+        vec![Line::from("two")],
     );
 
     let combined = [out1, out2].concat();
@@ -61,7 +62,7 @@ fn live_ring_rows_not_inserted_into_history() {
     codex_tui::insert_history::insert_history_lines_to_writer(
         &mut t,
         &mut buf,
-        vec!["one".into(), "two".into()],
+        vec![Line::from("one"), Line::from("two")],
     );
 
     // The live ring might display tail+head rows like ["two", "three"],

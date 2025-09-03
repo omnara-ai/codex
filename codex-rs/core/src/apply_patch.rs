@@ -109,9 +109,7 @@ pub(crate) fn convert_apply_patch_to_protocol(
             ApplyPatchFileChange::Add { content } => FileChange::Add {
                 content: content.clone(),
             },
-            ApplyPatchFileChange::Delete { content } => FileChange::Delete {
-                content: content.clone(),
-            },
+            ApplyPatchFileChange::Delete => FileChange::Delete,
             ApplyPatchFileChange::Update {
                 unified_diff,
                 move_path,

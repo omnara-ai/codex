@@ -578,12 +578,7 @@ index {ZERO_OID}..{right_oid}
         fs::write(&file, "x\n").unwrap();
 
         let mut acc = TurnDiffTracker::new();
-        let del_changes = HashMap::from([(
-            file.clone(),
-            FileChange::Delete {
-                content: "x\n".to_string(),
-            },
-        )]);
+        let del_changes = HashMap::from([(file.clone(), FileChange::Delete)]);
         acc.on_patch_begin(&del_changes);
 
         // Simulate apply: delete the file from disk.
@@ -746,12 +741,7 @@ index {left_oid}..{right_oid}
         assert_eq!(first, expected_first);
 
         // Next: introduce a brand-new path b.txt into baseline snapshots via a delete change.
-        let del_b = HashMap::from([(
-            b.clone(),
-            FileChange::Delete {
-                content: "z\n".to_string(),
-            },
-        )]);
+        let del_b = HashMap::from([(b.clone(), FileChange::Delete)]);
         acc.on_patch_begin(&del_b);
         // Simulate apply: delete b.txt.
         let baseline_mode = file_mode_for_path(&b).unwrap_or(FileMode::Regular);

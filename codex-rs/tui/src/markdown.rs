@@ -2,6 +2,7 @@ use crate::citation_regex::CITATION_REGEX;
 use codex_core::config::Config;
 use codex_core::config_types::UriBasedFileOpener;
 use ratatui::text::Line;
+use ratatui::text::Span;
 use std::borrow::Cow;
 use std::path::Path;
 
@@ -43,7 +44,7 @@ fn append_markdown_with_opener_and_cwd(
                     } else {
                         line
                     };
-                    let owned_line: Line<'static> = line.to_string().into();
+                    let owned_line: Line<'static> = Line::from(Span::raw(line.to_string()));
                     lines.push(owned_line);
                 }
             }

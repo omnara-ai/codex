@@ -1,6 +1,7 @@
 use codex_core::protocol::ConversationHistoryResponseEvent;
 use codex_core::protocol::Event;
 use codex_file_search::FileMatch;
+use ratatui::text::Line;
 
 use crate::history_cell::HistoryCell;
 
@@ -39,6 +40,7 @@ pub(crate) enum AppEvent {
     /// Result of computing a `/diff` command.
     DiffResult(String),
 
+    InsertHistoryLines(Vec<Line<'static>>),
     InsertHistoryCell(Box<dyn HistoryCell>),
 
     StartCommitAnimation,

@@ -62,13 +62,20 @@ impl HeaderEmitter {
         self.emitted_this_turn = false;
     }
 
-    pub(crate) fn maybe_emit_header(&mut self) -> bool {
+    pub(crate) fn maybe_emit(&mut self, out_lines: &mut Vec<ratatui::text::Line<'static>>) -> bool {
         if !self.emitted_in_stream && !self.emitted_this_turn {
+            // Add a leading blank line before the header for visual spacing
+            out_lines.push(ratatui::text::Line::from(""));
+            out_lines.push(render_header_line());
             self.emitted_in_stream = true;
             self.emitted_this_turn = true;
-            true
-        } else {
-            false
+            return true;
         }
+        false
     }
+}
+
+fn render_header_line() -> ratatui::text::Line<'static> {
+    use ratatui::style::Stylize;
+    ratatui::text::Line::from("codex".magenta().bold())
 }

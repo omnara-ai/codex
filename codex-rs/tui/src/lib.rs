@@ -4,9 +4,7 @@
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 #![deny(clippy::disallowed_methods)]
 use app::App;
-use codex_core::AuthManager;
 use codex_core::BUILT_IN_OSS_MODEL_PROVIDER_ID;
-use codex_core::CodexAuth;
 use codex_core::config::Config;
 use codex_core::config::ConfigOverrides;
 use codex_core::config::ConfigToml;
@@ -14,9 +12,11 @@ use codex_core::config::find_codex_home;
 use codex_core::config::load_config_as_toml_with_cli_overrides;
 use codex_core::protocol::AskForApproval;
 use codex_core::protocol::SandboxPolicy;
+use codex_login::AuthManager;
+use codex_login::AuthMode;
+use codex_login::CodexAuth;
 use codex_ollama::DEFAULT_OSS_MODEL;
 use codex_protocol::config_types::SandboxMode;
-use codex_protocol::mcp_protocol::AuthMode;
 use std::fs::OpenOptions;
 use std::path::PathBuf;
 use tracing::error;
@@ -34,6 +34,7 @@ mod chatwidget;
 mod citation_regex;
 mod cli;
 mod clipboard_paste;
+mod common;
 pub mod custom_terminal;
 mod diff_render;
 mod exec_command;
@@ -268,6 +269,7 @@ async fn run_ratatui_app(
     if let Some(latest_version) = updates::get_upgrade_version(&config) {
         use ratatui::style::Stylize as _;
         use ratatui::text::Line;
+        use ratatui::text::Span;
 
         let current_version = env!("CARGO_PKG_VERSION");
         let exe = std::env::current_exe()?;
@@ -276,35 +278,35 @@ async fn run_ratatui_app(
         let mut lines: Vec<Line<'static>> = Vec::new();
         lines.push(Line::from(vec![
             "✨⬆️ Update available!".bold().cyan(),
-            " ".into(),
-            format!("{current_version} -> {latest_version}.").into(),
+            Span::raw(" "),
+            Span::raw(format!("{current_version} -> {latest_version}.")),
         ]));
 
         if managed_by_npm {
             let npm_cmd = "npm install -g @openai/codex@latest";
             lines.push(Line::from(vec![
-                "Run ".into(),
+                Span::raw("Run "),
                 npm_cmd.cyan(),
-                " to update.".into(),
+                Span::raw(" to update."),
             ]));
         } else if cfg!(target_os = "macos")
             && (exe.starts_with("/opt/homebrew") || exe.starts_with("/usr/local"))
         {
             let brew_cmd = "brew upgrade codex";
             lines.push(Line::from(vec![
-                "Run ".into(),
+                Span::raw("Run "),
                 brew_cmd.cyan(),
-                " to update.".into(),
+                Span::raw(" to update."),
             ]));
         } else {
             lines.push(Line::from(vec![
-                "See ".into(),
+                Span::raw("See "),
                 "https://github.com/openai/codex/releases/latest".cyan(),
-                " for the latest releases and installation options.".into(),
+                Span::raw(" for the latest releases and installation options."),
             ]));
         }
 
-        lines.push("".into());
+        lines.push(Line::from(""));
         tui.insert_history_lines(lines);
     }
 

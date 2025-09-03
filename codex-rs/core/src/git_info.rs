@@ -10,35 +10,7 @@ use tokio::process::Command;
 use tokio::time::Duration as TokioDuration;
 use tokio::time::timeout;
 
-/// Return `true` if the project folder specified by the `Config` is inside a
-/// Git repository.
-///
-/// The check walks up the directory hierarchy looking for a `.git` file or
-/// directory (note `.git` can be a file that contains a `gitdir` entry). This
-/// approach does **not** require the `git` binary or the `git2` crate and is
-/// therefore fairly lightweight.
-///
-/// Note that this does **not** detect *work‑trees* created with
-/// `git worktree add` where the checkout lives outside the main repository
-/// directory. If you need Codex to work from such a checkout simply pass the
-/// `--allow-no-git-exec` CLI flag that disables the repo requirement.
-pub fn get_git_repo_root(base_dir: &Path) -> Option<PathBuf> {
-    let mut dir = base_dir.to_path_buf();
-
-    loop {
-        if dir.join(".git").exists() {
-            return Some(dir);
-        }
-
-        // Pop one component (go up one directory).  `pop` returns false when
-        // we have reached the filesystem root.
-        if !dir.pop() {
-            break;
-        }
-    }
-
-    None
-}
+use crate::util::is_inside_git_repo;
 
 /// Timeout for git commands to prevent freezing on large repositories
 const GIT_COMMAND_TIMEOUT: TokioDuration = TokioDuration::from_secs(5);
@@ -122,7 +94,9 @@ pub async fn collect_git_info(cwd: &Path) -> Option<GitInfo> {
 
 /// Returns the closest git sha to HEAD that is on a remote as well as the diff to that sha.
 pub async fn git_diff_to_remote(cwd: &Path) -> Option<GitDiffToRemote> {
-    get_git_repo_root(cwd)?;
+    if !is_inside_git_repo(cwd) {
+        return None;
+    }
 
     let remotes = get_git_remotes(cwd).await?;
     let branches = branch_ancestry(cwd).await?;
@@ -466,7 +440,7 @@ async fn diff_against_sha(cwd: &Path, sha: &GitSha) -> Option<String> {
 }
 
 /// Resolve the path that should be used for trust checks. Similar to
-/// `[get_git_repo_root]`, but resolves to the root of the main
+/// `[utils::is_inside_git_repo]`, but resolves to the root of the main
 /// repository. Handles worktrees.
 pub fn resolve_root_git_project_for_trust(cwd: &Path) -> Option<PathBuf> {
     let base = if cwd.is_dir() { cwd } else { cwd.parent()? };
