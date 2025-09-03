@@ -100,9 +100,6 @@ pub(crate) fn truncate_text(text: &str, max_graphemes: usize) -> String {
     }
 }
 
-/// Convert Ratatui `Line`s to plain text by concatenating span contents.
-/// This strips styling while preserving the on-screen text (including emojis).
-
 #[cfg(test)]
 mod tests {
     use super::*;
