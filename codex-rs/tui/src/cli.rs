@@ -90,4 +90,16 @@ pub struct Cli {
 
     #[clap(skip)]
     pub config_overrides: CliConfigOverrides,
+
+    /// Omnara: API key to enable Omnara dashboard integration.
+    #[arg(long = "omnara-api-key")]
+    pub omnara_api_key: Option<String>,
+
+    /// Omnara: override API base URL.
+    #[arg(long = "omnara-api-url")]
+    pub omnara_api_url: Option<String>,
+
+    /// Omnara: set session id (UUID). If unset, a new UUID is generated.
+    #[arg(long = "omnara-session-id")]
+    pub omnara_session_id: Option<String>,
 }

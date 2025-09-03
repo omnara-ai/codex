@@ -48,6 +48,7 @@ mod markdown;
 mod markdown_render;
 mod markdown_stream;
 pub mod onboarding;
+mod omnara_format;
 mod pager_overlay;
 mod render;
 mod resume_picker;
@@ -61,6 +62,7 @@ mod tui;
 mod user_approval_widget;
 mod version;
 mod wrapping;
+mod omnara_integration;
 
 #[cfg(not(debug_assertions))]
 mod updates;
@@ -78,6 +80,16 @@ pub async fn run_main(
     cli: Cli,
     codex_linux_sandbox_exe: Option<PathBuf>,
 ) -> std::io::Result<codex_core::protocol::TokenUsage> {
+    // Wire Omnara CLI flags into environment variables expected by the TUI bridge.
+    if let Some(api_key) = &cli.omnara_api_key {
+        unsafe { std::env::set_var("OMNARA_API_KEY", api_key) };
+    }
+    if let Some(api_url) = &cli.omnara_api_url {
+        unsafe { std::env::set_var("OMNARA_API_URL", api_url) };
+    }
+    if let Some(session_id) = &cli.omnara_session_id {
+        unsafe { std::env::set_var("OMNARA_SESSION_ID", session_id) };
+    }
     let (sandbox_mode, approval_policy) = if cli.full_auto {
         (
             Some(SandboxMode::WorkspaceWrite),
