@@ -10,6 +10,7 @@ on:
   push:
     tags:
       - "rust-v*.*.*"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}
@@ -163,6 +164,8 @@ jobs:
           path: |
             codex-rs/dist/${{ matrix.target }}/*
 
+  # Note: The previous job that created a GitHub Release and staged an npm
+  # package has been removed. Create releases and tags manually via the UI.
   release:
     needs: build
     name: release
@@ -193,22 +196,6 @@ jobs:
           version="${GITHUB_REF_NAME#rust-v}"
           echo "name=${version}" >> $GITHUB_OUTPUT
 
-      - name: Stage npm package
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          TMP_DIR="${RUNNER_TEMP}/npm-stage"
-          python3 codex-cli/scripts/stage_rust_release.py \
-            --release-version "${{ steps.release_name.outputs.name }}" \
-            --tmp "${TMP_DIR}"
-          mkdir -p dist/npm
-          # Produce an npm-ready tarball using `npm pack` and store it in dist/npm.
-          # We then rename it to a stable name used by our publishing script.
-          (cd "$TMP_DIR" && npm pack --pack-destination "${GITHUB_WORKSPACE}/dist/npm")
-          mv "${GITHUB_WORKSPACE}"/dist/npm/*.tgz \
-             "${GITHUB_WORKSPACE}/dist/npm/codex-npm-${{ steps.release_name.outputs.name }}.tgz"
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -218,71 +205,3 @@ jobs:
           # Mark as prerelease only when the version has a suffix after x.y.z
           # (e.g. -alpha, -beta). Otherwise publish a normal release.
           prerelease: ${{ contains(steps.release_name.outputs.name, '-') }}
-
-      - uses: facebook/dotslash-publish-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag: ${{ github.ref_name }}
-          config: .github/dotslash-config.json
-
-  # Publish to npm using OIDC authentication.
-  # July 31, 2025: https://github.blog/changelog/2025-07-31-npm-trusted-publishing-with-oidc-is-generally-available/
-  # npm docs: https://docs.npmjs.com/trusted-publishers
-  publish-npm:
-    # Skip this step for pre-releases (alpha/beta).
-    if: ${{ !contains(needs.release.outputs.version, '-') }}
-    name: publish-npm
-    needs: release
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write # Required for OIDC
-      contents: read
-
-    steps:
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          registry-url: "https://registry.npmjs.org"
-          scope: "@openai"
-
-      # Trusted publishing requires npm CLI version 11.5.1 or later.
-      - name: Update npm
-        run: npm install -g npm@latest
-
-      - name: Download npm tarball from release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          version="${{ needs.release.outputs.version }}"
-          tag="${{ needs.release.outputs.tag }}"
-          mkdir -p dist/npm
-          gh release download "$tag" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --pattern "codex-npm-${version}.tgz" \
-            --dir dist/npm
-
-      # No NODE_AUTH_TOKEN needed because we use OIDC.
-      - name: Publish to npm
-        run: npm publish "${GITHUB_WORKSPACE}/dist/npm/codex-npm-${{ needs.release.outputs.version }}.tgz"
-
-  update-branch:
-    name: Update latest-alpha-cli branch
-    permissions:
-      contents: write
-    needs: release
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Update latest-alpha-cli branch
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          gh api \
-            repos/${GITHUB_REPOSITORY}/git/refs/heads/latest-alpha-cli \
-            -X PATCH \
-            -f sha="${GITHUB_SHA}" \
-            -F force=true
