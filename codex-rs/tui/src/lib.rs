@@ -47,8 +47,9 @@ pub mod live_wrap;
 mod markdown;
 mod markdown_render;
 mod markdown_stream;
-pub mod onboarding;
 mod omnara_format;
+mod omnara_integration;
+pub mod onboarding;
 mod pager_overlay;
 mod render;
 mod resume_picker;
@@ -62,7 +63,6 @@ mod tui;
 mod user_approval_widget;
 mod version;
 mod wrapping;
-mod omnara_integration;
 
 #[cfg(not(debug_assertions))]
 mod updates;
@@ -291,7 +291,7 @@ async fn run_ratatui_app(
         } else if cfg!(target_os = "macos")
             && (exe.starts_with("/opt/homebrew") || exe.starts_with("/usr/local"))
         {
-            let brew_cmd = "brew upgrade codex";
+            let brew_cmd = "brew upgrade omnara-codex";
             lines.push(Line::from(vec![
                 "Run ".into(),
                 brew_cmd.cyan(),
@@ -300,7 +300,7 @@ async fn run_ratatui_app(
         } else {
             lines.push(Line::from(vec![
                 "See ".into(),
-                "https://github.com/openai/codex/releases/latest".cyan(),
+                "https://github.com/omnara-ai/codex/releases/latest".cyan(),
                 " for the latest releases and installation options.".into(),
             ]));
         }

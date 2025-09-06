@@ -10,6 +10,7 @@ on:
   push:
     tags:
       - "rust-v*.*.*"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}
@@ -163,78 +164,5 @@ jobs:
           path: |
             codex-rs/dist/${{ matrix.target }}/*
 
-  release:
-    needs: build
-    name: release
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-
-      - name: List
-        run: ls -R dist/
-
-      - name: Define release name
-        id: release_name
-        run: |
-          # Extract the version from the tag name, which is in the format
-          # "rust-v0.1.0".
-          version="${GITHUB_REF_NAME#rust-v}"
-          echo "name=${version}" >> $GITHUB_OUTPUT
-
-      - name: Stage npm package
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          TMP_DIR="${RUNNER_TEMP}/npm-stage"
-          python3 codex-cli/scripts/stage_rust_release.py \
-            --release-version "${{ steps.release_name.outputs.name }}" \
-            --tmp "${TMP_DIR}"
-          mkdir -p dist/npm
-          # Produce an npm-ready tarball using `npm pack` and store it in dist/npm.
-          # We then rename it to a stable name used by our publishing script.
-          (cd "$TMP_DIR" && npm pack --pack-destination "${GITHUB_WORKSPACE}/dist/npm")
-          mv "${GITHUB_WORKSPACE}"/dist/npm/*.tgz \
-             "${GITHUB_WORKSPACE}/dist/npm/codex-npm-${{ steps.release_name.outputs.name }}.tgz"
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: ${{ steps.release_name.outputs.name }}
-          tag_name: ${{ github.ref_name }}
-          files: dist/**
-          # Mark as prerelease only when the version has a suffix after x.y.z
-          # (e.g. -alpha, -beta). Otherwise publish a normal release.
-          prerelease: ${{ contains(steps.release_name.outputs.name, '-') }}
-
-      - uses: facebook/dotslash-publish-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag: ${{ github.ref_name }}
-          config: .github/dotslash-config.json
-
-  update-branch:
-    name: Update latest-alpha-cli branch
-    permissions:
-      contents: write
-    needs: release
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Update latest-alpha-cli branch
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          gh api \
-            repos/${GITHUB_REPOSITORY}/git/refs/heads/latest-alpha-cli \
-            -X PATCH \
-            -f sha="${GITHUB_SHA}" \
-            -F force=true
+  # Note: The previous job that created a GitHub Release and staged an npm
+  # package has been removed. Create releases and tags manually via the UI.
