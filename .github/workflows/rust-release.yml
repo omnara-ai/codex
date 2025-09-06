@@ -166,3 +166,36 @@ jobs:
 
   # Note: The previous job that created a GitHub Release and staged an npm
   # package has been removed. Create releases and tags manually via the UI.
+  release:
+    needs: build
+    name: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: List
+        run: ls -R dist/
+
+      - name: Define release name
+        id: release_name
+        run: |
+          # Extract the version from the tag name, which is in the format
+          # "rust-v0.1.0".
+          version="${GITHUB_REF_NAME#rust-v}"
+          echo "name=${version}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.release_name.outputs.name }}
+          tag_name: ${{ github.ref_name }}
+          files: dist/**
+          # Mark as prerelease only when the version has a suffix after x.y.z
+          # (e.g. -alpha, -beta). Otherwise publish a normal release.
+          prerelease: ${{ contains(steps.release_name.outputs.name, '-') }}
