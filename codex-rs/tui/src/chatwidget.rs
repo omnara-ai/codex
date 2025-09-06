@@ -72,10 +72,9 @@ use self::interrupts::InterruptManager;
 mod agent;
 use self::agent::spawn_agent;
 use self::agent::spawn_agent_from_existing;
+use crate::omnara_integration::OmnaraBridge;
 use crate::streaming::controller::AppEventHistorySink;
 use crate::streaming::controller::StreamController;
-use crate::omnara_integration::OmnaraBridge;
-use tracing::{debug, info};
 use codex_common::approval_presets::ApprovalPreset;
 use codex_common::approval_presets::builtin_approval_presets;
 use codex_common::model_presets::ModelPreset;
@@ -85,6 +84,7 @@ use codex_core::protocol::AskForApproval;
 use codex_core::protocol::SandboxPolicy;
 use codex_core::protocol_config_types::ReasoningEffort as ReasoningEffortConfig;
 use codex_file_search::FileMatch;
+use tracing::{debug, info};
 use uuid::Uuid;
 // External approval handled by Omnara bridge via direct ops
 
@@ -174,7 +174,9 @@ impl ChatWidget {
     }
     // --- Small event handlers ---
     fn on_session_configured(&mut self, event: codex_core::protocol::SessionConfiguredEvent) {
-        tracing::info!("ChatWidget.on_session_configured: session ready; announcing to Omnara if enabled");
+        tracing::info!(
+            "ChatWidget.on_session_configured: session ready; announcing to Omnara if enabled"
+        );
         self.bottom_pane
             .set_history_metadata(event.history_log_id, event.history_entry_count);
         self.session_id = Some(event.session_id);
@@ -202,7 +204,9 @@ impl ChatWidget {
     }
 
     fn on_agent_message(&mut self, message: String) {
-        debug!("ChatWidget.on_agent_message: applying final answer and forwarding to Omnara (if enabled)");
+        debug!(
+            "ChatWidget.on_agent_message: applying final answer and forwarding to Omnara (if enabled)"
+        );
         let sink = AppEventHistorySink(self.app_event_tx.clone());
         let finished = self.stream.apply_final_answer(&message, &sink);
         self.handle_if_stream_finished(finished);
@@ -210,7 +214,10 @@ impl ChatWidget {
         // Forward final agent message to Omnara (no immediate request if a task is running).
         if let Some(omnara) = self.omnara.as_mut() {
             let request_after = !self.bottom_pane.is_task_running();
-            debug!(request_after, "ChatWidget.on_agent_message: calling Omnara.on_agent_message");
+            debug!(
+                request_after,
+                "ChatWidget.on_agent_message: calling Omnara.on_agent_message"
+            );
             omnara.on_agent_message(message, request_after);
         }
     }
@@ -550,7 +557,9 @@ impl ChatWidget {
             };
             cell.complete_call(&ev.call_id, output.clone(), ev.duration);
             // When the last running command finishes, mirror a concise note to Omnara.
-            if self.running_commands.is_empty() && let Some(omnara) = self.omnara.as_ref() {
+            if self.running_commands.is_empty()
+                && let Some(omnara) = self.omnara.as_ref()
+            {
                 let msg = crate::omnara_format::format_exec_note(&cmd_for_note, &output);
                 omnara.send_note(msg);
             }
@@ -620,7 +629,11 @@ impl ChatWidget {
                 removed,
                 ev.reason.clone(),
                 ev.grant_root.clone(),
-                if details.is_empty() { None } else { Some(details) },
+                if details.is_empty() {
+                    None
+                } else {
+                    Some(details)
+                },
             );
         }
         self.request_redraw();
@@ -676,7 +689,8 @@ impl ChatWidget {
         self.flush_answer_stream_with_separator();
         let ok = ev.is_success();
         if let Some(omnara) = self.omnara.as_ref() {
-            let msg = crate::omnara_format::format_mcp_end_note(&ev.invocation, &ev.result, ev.duration);
+            let msg =
+                crate::omnara_format::format_mcp_end_note(&ev.invocation, &ev.result, ev.duration);
             omnara.send_note(msg);
         }
         let cell = history_cell::new_completed_mcp_tool_call(
@@ -1089,7 +1103,9 @@ impl ChatWidget {
         }
 
         // Mirror local user text to Omnara UI.
-        if !text.is_empty() && let Some(omnara) = self.omnara.as_ref() {
+        if !text.is_empty()
+            && let Some(omnara) = self.omnara.as_ref()
+        {
             // Cancel polling is handled at submission start; ensure mirroring too.
             debug!("ChatWidget.submit_user_message: mirroring local user message to Omnara");
             omnara.on_local_user_message(text);
@@ -1450,7 +1466,10 @@ impl ChatWidget {
     }
 
     /// Apply external approval decision (e.g., from Omnara) to current modal.
-    pub(crate) fn apply_external_approval(&mut self, decision: codex_core::protocol::ReviewDecision) -> bool {
+    pub(crate) fn apply_external_approval(
+        &mut self,
+        decision: codex_core::protocol::ReviewDecision,
+    ) -> bool {
         self.bottom_pane.apply_external_approval(decision)
     }
 
@@ -1492,7 +1511,6 @@ impl ChatWidget {
         self.bottom_pane.cursor_pos(bottom_pane_area)
     }
 }
-
 
 impl WidgetRef for &ChatWidget {
     fn render_ref(&self, area: Rect, buf: &mut Buffer) {

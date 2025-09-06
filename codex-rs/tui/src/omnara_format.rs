@@ -112,7 +112,9 @@ pub fn format_exec_note(command: &[String], output: &crate::history_cell::Comman
     let mut total_chars = 0usize;
     let mut truncated_by_chars = false;
     for raw_line in output.formatted_output.lines() {
-        if shown_lines >= MAX_LINES { break; }
+        if shown_lines >= MAX_LINES {
+            break;
+        }
         // Clip each line to MAX_LINE_CHARS
         let mut line = raw_line.to_string();
         if line.chars().count() > MAX_LINE_CHARS {
@@ -209,7 +211,9 @@ pub fn format_patch_approval_request(
     if let Some(r) = reason {
         approval_msg.push_str(&format!("\n\n{r}"));
     }
-    if let Some(details) = patch_details && !details.is_empty() {
+    if let Some(details) = patch_details
+        && !details.is_empty()
+    {
         approval_msg.push_str("\n\n");
         approval_msg.push_str(details);
     }

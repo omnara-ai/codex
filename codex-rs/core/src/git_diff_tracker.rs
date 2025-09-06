@@ -1,7 +1,7 @@
+use sha1::Digest;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::SystemTime;
-use sha1::Digest;
 
 /// Tracks git changes from an initial state through a session and can produce a
 /// combined unified diff (committed + uncommitted) plus untracked files created
@@ -117,7 +117,7 @@ impl GitDiffTracker {
                     let worktree_path = rest.trim();
                     let worktree = PathBuf::from(worktree_path);
                     if worktree != current_dir
-						&& let Ok(rel) = worktree.strip_prefix(&current_dir)
+                        && let Ok(rel) = worktree.strip_prefix(&current_dir)
                     {
                         let rels = rel.to_string_lossy().to_string();
                         if !rels.is_empty() {
@@ -132,7 +132,7 @@ impl GitDiffTracker {
 
     fn get_untracked_files(&self, exclude_patterns: &[String]) -> String {
         // Build git ls-files to find untracked files
-        let mut args: Vec<&str> = vec!["ls-files", "--others", "--exclude-standard"]; 
+        let mut args: Vec<&str> = vec!["ls-files", "--others", "--exclude-standard"];
         if !exclude_patterns.is_empty() {
             args.push("--");
             for p in exclude_patterns {
@@ -140,7 +140,9 @@ impl GitDiffTracker {
             }
         }
 
-        let Ok(out) = self.run_git(&args) else { return String::new() };
+        let Ok(out) = self.run_git(&args) else {
+            return String::new();
+        };
         let files: Vec<&str> = out.lines().filter(|s| !s.trim().is_empty()).collect();
         if files.is_empty() {
             return String::new();
@@ -155,9 +157,7 @@ impl GitDiffTracker {
         for rel in files {
             let abs = base.join(rel);
             // Skip files that existed before the session started.
-            match std::fs::metadata(&abs)
-                .and_then(|m| m.created().or_else(|_| m.modified()))
-            {
+            match std::fs::metadata(&abs).and_then(|m| m.created().or_else(|_| m.modified())) {
                 Ok(created) => {
                     if created < self.session_start_time {
                         continue;

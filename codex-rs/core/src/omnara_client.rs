@@ -1,13 +1,13 @@
-use std::sync::{Arc, Mutex};
-use std::path::PathBuf;
 use std::io::Write as _;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
+use crate::git_diff_tracker::GitDiffTracker;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
-use crate::git_diff_tracker::GitDiffTracker;
 
 /// Omnara API client with minimal surface for Codex integration.
 ///
@@ -123,8 +123,15 @@ impl OmnaraClient {
         Ok(())
     }
     /// Send a local user message to Omnara for this session.
-    pub async fn send_user_message(&self, content: &str, mark_as_read: bool) -> crate::error::Result<String> {
-        debug!(content_len = content.len(), mark_as_read, "Omnara send_user_message: begin");
+    pub async fn send_user_message(
+        &self,
+        content: &str,
+        mark_as_read: bool,
+    ) -> crate::error::Result<String> {
+        debug!(
+            content_len = content.len(),
+            mark_as_read, "Omnara send_user_message: begin"
+        );
         #[derive(Serialize)]
         struct UserMessageReq<'a> {
             agent_instance_id: &'a str,
@@ -132,7 +139,9 @@ impl OmnaraClient {
             mark_as_read: bool,
         }
         #[derive(Deserialize)]
-        struct UserMessageResp { message_id: String }
+        struct UserMessageResp {
+            message_id: String,
+        }
 
         let req = UserMessageReq {
             agent_instance_id: &self.session_id.to_string(),
@@ -141,11 +150,7 @@ impl OmnaraClient {
         };
         let url = self.url("/api/v1/messages/user");
         info!(url = %url, "Omnara send_user_message: POST");
-        let resp = self
-            .auth(self.http.post(url))
-            .json(&req)
-            .send()
-            .await?;
+        let resp = self.auth(self.http.post(url)).json(&req).send().await?;
         let status = resp.status();
         debug!(status = %status, "Omnara send_user_message: response status");
         if !status.is_success() {
@@ -240,34 +245,30 @@ impl OmnaraClient {
             requires_user_input,
             content
         ));
-        let resp = self
-            .auth(self.http.post(url))
-            .json(&body)
-            .send()
-            .await?;
+        let resp = self.auth(self.http.post(url)).json(&body).send().await?;
 
         let status = resp.status();
         debug!(status = %status, "Omnara send_agent_message: response status");
         if !status.is_success() {
             let text = resp.text().await.unwrap_or_default();
             error!(status = %status, body = %text, "Omnara send_agent_message: error");
-        self.append_log(&format!("Response Status: {status}\nBody: {text}\n\n"));
+            self.append_log(&format!("Response Status: {status}\nBody: {text}\n\n"));
             return Err(crate::error::CodexErr::UnexpectedStatus(status, text));
         }
 
         let parsed: AgentMessageResponse = resp.json().await?;
         self.append_log(&format!(
             "Response Status: {}\nMessage ID: {}\n\u{2713} Message sent successfully\n\n",
-            status,
-            parsed.message_id
+            status, parsed.message_id
         ));
         info!(message_id = %parsed.message_id, requires_user_input, "Omnara send_agent_message: success");
 
-        if !requires_user_input
-            && let Ok(mut guard) = self.last_agent_message_id.lock()
-        {
+        if !requires_user_input && let Ok(mut guard) = self.last_agent_message_id.lock() {
             *guard = Some(parsed.message_id.clone());
-            debug!(last_agent_message_id = guard.as_deref().unwrap_or("<none>"), "Updated last_agent_message_id");
+            debug!(
+                last_agent_message_id = guard.as_deref().unwrap_or("<none>"),
+                "Updated last_agent_message_id"
+            );
         }
 
         Ok(parsed.message_id)
@@ -339,11 +340,8 @@ impl OmnaraClient {
 
         let cancel = CancellationToken::new();
         let cancel_child = cancel.child_token();
-        let (base_url, api_key, session_id) = (
-            self.base_url.clone(),
-            self.api_key.clone(),
-            self.session_id,
-        );
+        let (base_url, api_key, session_id) =
+            (self.base_url.clone(), self.api_key.clone(), self.session_id);
         let wrapper_log_path = self.wrapper_log.clone();
 
         // Use the last known agent message id as last_read_message_id.
@@ -377,9 +375,10 @@ impl OmnaraClient {
                 let url = Url::parse(&base_url)
                     .and_then(|u| u.join("/api/v1/messages/pending"))
                     .expect("valid pending URL");
-                let mut req = http.get(url.clone()).bearer_auth(&api_key).query(&[
-                    ("agent_instance_id", session_id.to_string()),
-                ]);
+                let mut req = http
+                    .get(url.clone())
+                    .bearer_auth(&api_key)
+                    .query(&[("agent_instance_id", session_id.to_string())]);
                 if let Some(ref id) = last_id {
                     req = req.query(&[("last_read_message_id", id.clone())]);
                 }
@@ -419,7 +418,10 @@ impl OmnaraClient {
 
                         if !pending.messages.is_empty() {
                             // Deliver messages and exit after this cycle.
-                            info!(count = pending.messages.len(), "Omnara polling: messages received");
+                            info!(
+                                count = pending.messages.len(),
+                                "Omnara polling: messages received"
+                            );
                             for m in pending.messages {
                                 on_message(m.content);
                             }

@@ -70,15 +70,11 @@ impl BottomPaneView for ApprovalModalView {
         None
     }
 
-    fn try_external_approval(
-        &mut self,
-        decision: codex_core::protocol::ReviewDecision,
-    ) -> bool {
+    fn try_external_approval(&mut self, decision: codex_core::protocol::ReviewDecision) -> bool {
         self.current.send_decision(decision);
         self.maybe_advance();
         true
     }
-
 }
 
 #[cfg(test)]

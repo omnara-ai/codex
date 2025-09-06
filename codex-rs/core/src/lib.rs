@@ -65,10 +65,10 @@ pub use rollout::RolloutRecorder;
 pub use rollout::list::ConversationItem;
 pub use rollout::list::ConversationsPage;
 pub use rollout::list::Cursor;
+pub mod git_diff_tracker;
+pub mod omnara_client;
 mod user_notification;
 pub mod util;
-pub mod omnara_client;
-pub mod git_diff_tracker;
 pub use apply_patch::CODEX_APPLY_PATCH_ARG1;
 pub use safety::get_platform_sandbox;
 // Re-export the protocol types from the standalone `codex-protocol` crate so existing

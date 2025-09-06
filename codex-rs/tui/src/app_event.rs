@@ -64,4 +64,3 @@ pub(crate) enum AppEvent {
         decision: codex_core::protocol::ReviewDecision,
     },
 }
-

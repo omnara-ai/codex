@@ -357,8 +357,6 @@ impl BottomPane {
         handled
     }
 
-    
-
     pub(crate) fn composer_is_empty(&self) -> bool {
         self.composer.is_empty()
     }
