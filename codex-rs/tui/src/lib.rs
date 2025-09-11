@@ -306,7 +306,7 @@ async fn run_ratatui_app(
         }
 
         lines.push("".into());
-        tui.insert_history_lines(lines);
+        // tui.insert_history_lines(lines);
     }
 
     // Initialize high-fidelity session event logging if enabled.

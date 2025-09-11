@@ -87,7 +87,6 @@ use codex_core::protocol_config_types::ReasoningEffort as ReasoningEffortConfig;
 use codex_file_search::FileMatch;
 use codex_protocol::mcp_protocol::ConversationId;
 use tracing::{debug, info};
-use uuid::Uuid;
 // External approval handled by Omnara bridge via direct ops
 
 // Track information about an in-flight exec command.
@@ -1092,7 +1091,7 @@ impl ChatWidget {
 
         // Only show the text portion in conversation history.
         if !text.is_empty() {
-            self.add_to_history(history_cell::new_user_prompt(text));
+            self.add_to_history(history_cell::new_user_prompt(text.clone()));
         }
 
         // Mirror local user text to Omnara UI.
