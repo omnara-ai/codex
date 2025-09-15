@@ -608,7 +608,7 @@ impl ChatWidget {
         self.bottom_pane.push_approval_request(request);
         // Also send remote approval request if Omnara is configured.
         if let Some(omnara) = self.omnara.as_mut() {
-            omnara.send_exec_approval_request(id, ev.command.clone(), ev.reason.clone());
+            omnara.send_exec_approval_request(id, ev.command.clone(), ev.reason);
         }
         self.request_redraw();
     }

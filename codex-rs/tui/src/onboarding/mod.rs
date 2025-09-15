@@ -1,5 +1,5 @@
-mod auth;
+pub mod auth;
 pub mod onboarding_screen;
-mod trust_directory;
+pub mod trust_directory;
 pub use trust_directory::TrustDirectorySelection;
-mod welcome;
+pub mod welcome;

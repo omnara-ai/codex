@@ -52,7 +52,6 @@ mod markdown;
 mod markdown_render;
 mod markdown_stream;
 mod new_model_popup;
-pub mod onboarding;
 mod omnara_format;
 mod omnara_integration;
 pub mod onboarding;
