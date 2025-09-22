@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 
-REPO = "openai/codex"
+REPO = "omnara-ai/codex"
 BRANCH_REF = "heads/main"
 CARGO_TOML_PATH = "codex-rs/Cargo.toml"
 
