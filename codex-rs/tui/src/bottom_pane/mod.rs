@@ -362,10 +362,12 @@ impl BottomPane {
         decision: codex_core::protocol::ReviewDecision,
     ) -> bool {
         let mut handled = false;
-        if let Some(mut view) = self.active_view.take() {
+        if let Some(mut view) = self.view_stack.pop() {
             handled = view.try_external_approval(decision);
             if !view.is_complete() {
-                self.active_view = Some(view);
+                self.view_stack.push(view);
+            } else {
+                self.on_active_view_complete();
             }
             self.request_redraw();
         }

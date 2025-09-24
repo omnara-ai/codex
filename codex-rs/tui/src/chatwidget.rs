@@ -301,7 +301,7 @@ impl ChatWidget {
         // If we have a stream_controller, then the final agent message is redundant and will be a
         // duplicate of what has already been streamed.
         if self.stream_controller.is_none() {
-            self.handle_streaming_delta(message);
+            self.handle_streaming_delta(message.clone());
         }
         self.flush_answer_stream_with_separator();
         self.handle_stream_finished();
@@ -1958,6 +1958,8 @@ impl ChatWidget {
             }),
         );
         self.bottom_pane.show_view(Box::new(view));
+    }
+
     /// Apply external approval decision (e.g., from Omnara) to current modal.
     pub(crate) fn apply_external_approval(
         &mut self,
